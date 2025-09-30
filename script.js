@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.static("public"));
 
-// Step 1: Callback - exchange code for token + fetch IG Business account
+// Step 1: OAuth callback
 app.get("/auth/callback", async (req, res) => {
   const { code } = req.query;
   if (!code) return res.status(400).send("Missing code");
@@ -39,22 +39,17 @@ app.get("/auth/callback", async (req, res) => {
     const longData = await longRes.json();
     const longLivedToken = longData.access_token;
 
-    // Fetch user pages via Graph API
-    const pagesRes = await fetch(
-      `https://graph.facebook.com/v21.0/me/accounts?access_token=${longLivedToken}`
-    );
-    const pagesData = await pagesRes.json();
+    // Fetch your FB Page and ensure IG account connects to your Page
+    const pageId = process.env.PAGE_ID;
 
-    if (!pagesData.data || pagesData.data.length === 0)
-      return res.status(400).send("No Pages connected to this IG account");
-
-    const pageId = pagesData.data[0].id;
-
-    // Fetch connected Instagram Business account
     const igRes = await fetch(
       `https://graph.facebook.com/v21.0/${pageId}?fields=connected_instagram_account&access_token=${longLivedToken}`
     );
     const igData = await igRes.json();
+
+    if (!igData.connected_instagram_account) {
+      return res.status(400).send("Failed to connect IG account to your Page. Make sure user completes IG -> Page connection flow.");
+    }
 
     res.json({
       userId,

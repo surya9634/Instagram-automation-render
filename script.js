@@ -8,64 +8,64 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.static("public"));
 
-// Step 1: Redirect user to Instagram-styled Meta OAuth
-app.get("/auth/instagram", (req, res) => {
-  const authUrl = `https://www.instagram.com/accounts/login/?force_authentication&platform_app_id=${process.env.APP_ID}&enable_fb_login&next=${encodeURIComponent(
-    `https://www.instagram.com/oauth/authorize/third_party/?redirect_uri=${process.env.REDIRECT_URI}`
-  )}`;
-  res.redirect(authUrl);
-});
-
-// Step 2: Callback - exchange code for token
+// Step 1: Callback - exchange code for token + fetch IG Business account
 app.get("/auth/callback", async (req, res) => {
   const { code } = req.query;
-
-  if (!code) {
-    return res.status(400).send("No code provided");
-  }
+  if (!code) return res.status(400).send("Missing code");
 
   try {
     // Exchange code for short-lived token
-    const tokenRes = await fetch(
-      `https://graph.facebook.com/v21.0/oauth/access_token?client_id=${process.env.APP_ID}&redirect_uri=${process.env.REDIRECT_URI}&client_secret=${process.env.APP_SECRET}&code=${code}`
-    );
+    const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: process.env.APP_ID,
+        client_secret: process.env.APP_SECRET,
+        grant_type: "authorization_code",
+        redirect_uri: process.env.REDIRECT_URI,
+        code,
+      }),
+    });
     const tokenData = await tokenRes.json();
-
-    if (tokenData.error) {
-      return res.status(400).json(tokenData);
-    }
+    if (tokenData.error) return res.status(400).json(tokenData);
 
     const shortLivedToken = tokenData.access_token;
+    const userId = tokenData.user_id;
 
     // Exchange for long-lived token
     const longRes = await fetch(
-      `https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${process.env.APP_ID}&client_secret=${process.env.APP_SECRET}&fb_exchange_token=${shortLivedToken}`
+      `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${process.env.APP_SECRET}&access_token=${shortLivedToken}`
     );
     const longData = await longRes.json();
+    const longLivedToken = longData.access_token;
 
-    const accessToken = longData.access_token;
-
-    // Fetch user pages
+    // Fetch user pages via Graph API
     const pagesRes = await fetch(
-      `https://graph.facebook.com/v21.0/me/accounts?access_token=${accessToken}`
+      `https://graph.facebook.com/v21.0/me/accounts?access_token=${longLivedToken}`
     );
     const pagesData = await pagesRes.json();
 
-    // Get Instagram account from first Page (demo)
+    if (!pagesData.data || pagesData.data.length === 0)
+      return res.status(400).send("No Pages connected to this IG account");
+
     const pageId = pagesData.data[0].id;
+
+    // Fetch connected Instagram Business account
     const igRes = await fetch(
-      `https://graph.facebook.com/v21.0/${pageId}?fields=connected_instagram_account&access_token=${accessToken}`
+      `https://graph.facebook.com/v21.0/${pageId}?fields=connected_instagram_account&access_token=${longLivedToken}`
     );
     const igData = await igRes.json();
 
     res.json({
-      accessToken,
+      userId,
+      shortLivedToken,
+      longLivedToken,
       pageId,
       instagramAccount: igData.connected_instagram_account,
     });
   } catch (err) {
     console.error(err);
-    res.status(500).send("Error during auth");
+    res.status(500).send("Auth failed");
   }
 });
 

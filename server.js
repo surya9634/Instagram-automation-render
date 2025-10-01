@@ -12,24 +12,27 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use(session({
-    secret: 'instagram-dm-automation-secret-key-2024',
+    secret: process.env.SESSION_SECRET || 'instagram-dm-automation-secret-key-2024',
     resave: false,
     saveUninitialized: true,
-    cookie: { secure: false }
+    cookie: { 
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
 }));
 
-// In-memory storage (replace with database in production)
+// In-memory storage
 const users = new Map();
 const posts = new Map();
 const hotwords = new Map();
 const dmLogs = new Map();
 
-// Instagram API Configuration
+// Instagram Business API Configuration
 const INSTAGRAM_CONFIG = {
-    clientId: process.env.INSTAGRAM_CLIENT_ID || 'YOUR_INSTAGRAM_APP_ID',
-    clientSecret: process.env.INSTAGRAM_CLIENT_SECRET || 'YOUR_INSTAGRAM_APP_SECRET',
-    redirectUri: process.env.REDIRECT_URI || 'http://localhost:5000/auth/instagram/callback',
-    scope: 'user_profile,user_media,instagram_basic,instagram_manage_messages,pages_show_list,pages_read_engagement'
+    clientId: process.env.INSTAGRAM_CLIENT_ID || '1477959410285896',
+    clientSecret: process.env.INSTAGRAM_CLIENT_SECRET,
+    redirectUri: process.env.REDIRECT_URI || 'https://instagram-automation-render.onrender.com/auth/callback',
+    scope: 'instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights'
 };
 
 // Utility functions
@@ -45,7 +48,7 @@ function logAction(userId, action, details) {
 function startCommentMonitoring() {
     setInterval(() => {
         monitorComments();
-    }, 15000); // Check every 15 seconds
+    }, 30000); // Check every 30 seconds
 }
 
 // Monitor comments for all users
@@ -67,47 +70,63 @@ async function checkUserComments(userId, userData) {
     if (userPosts.size === 0) return;
 
     try {
-        // Get user's recent media (in production, you'd use webhooks)
-        const mediaResponse = await axios.get(`https://graph.instagram.com/me/media`, {
+        // Get user's Instagram Business Account ID first
+        const accountsResponse = await axios.get(`https://graph.facebook.com/v19.0/me/accounts`, {
             params: {
-                fields: 'id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,comments_count',
                 access_token: userData.accessToken,
-                limit: 10
+                fields: 'instagram_business_account{id,username,profile_picture_url}'
+            }
+        });
+
+        const instagramAccount = accountsResponse.data.data.find(account => account.instagram_business_account);
+        if (!instagramAccount) {
+            console.log(`No Instagram Business account found for user ${userId}`);
+            return;
+        }
+
+        const igBusinessAccountId = instagramAccount.instagram_business_account.id;
+
+        // Get user's media from Instagram Business Account
+        const mediaResponse = await axios.get(`https://graph.facebook.com/v19.0/${igBusinessAccountId}/media`, {
+            params: {
+                fields: 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,comments_count',
+                access_token: userData.accessToken,
+                limit: 20
             }
         });
 
         for (const post of mediaResponse.data.data) {
-            await processPostComments(userId, userData, post, userHotwords);
+            await processPostComments(userId, userData, post, userHotwords, igBusinessAccountId);
         }
     } catch (error) {
-        console.error(`Error fetching media for user ${userId}:`, error.message);
+        console.error(`Error fetching media for user ${userId}:`, error.response?.data || error.message);
     }
 }
 
 // Process comments for a specific post
-async function processPostComments(userId, userData, post, userHotwords) {
+async function processPostComments(userId, userData, post, userHotwords, igBusinessAccountId) {
     const postHotwords = userHotwords.get(post.id) || [];
     if (postHotwords.length === 0) return;
 
     try {
-        // Get comments for this post
-        const commentsResponse = await axios.get(`https://graph.instagram.com/${post.id}/comments`, {
+        // Get comments for this post using Instagram Business API
+        const commentsResponse = await axios.get(`https://graph.facebook.com/v19.0/${post.id}/comments`, {
             params: {
-                fields: 'id,text,username,timestamp',
+                fields: 'id,text,username,timestamp,from',
                 access_token: userData.accessToken
             }
         });
 
         for (const comment of commentsResponse.data.data) {
-            await processComment(userId, userData, post, comment, postHotwords);
+            await processComment(userId, userData, post, comment, postHotwords, igBusinessAccountId);
         }
     } catch (error) {
-        console.error(`Error fetching comments for post ${post.id}:`, error.message);
+        console.error(`Error fetching comments for post ${post.id}:`, error.response?.data || error.message);
     }
 }
 
 // Process individual comment
-async function processComment(userId, userData, post, comment, postHotwords) {
+async function processComment(userId, userData, post, comment, postHotwords, igBusinessAccountId) {
     const commentText = comment.text.toLowerCase();
     const commentId = comment.id;
     
@@ -122,18 +141,34 @@ async function processComment(userId, userData, post, comment, postHotwords) {
     // Check for matching hotwords
     for (const hotwordConfig of postHotwords) {
         if (commentText.includes(hotwordConfig.word.toLowerCase())) {
-            await sendAutomatedDM(userId, userData, comment, post, hotwordConfig);
+            await sendAutomatedDM(userId, userData, comment, post, hotwordConfig, igBusinessAccountId);
             break; // Only send one DM per comment
         }
     }
 }
 
-// Send automated DM
-async function sendAutomatedDM(userId, userData, comment, post, hotwordConfig) {
+// Send automated DM using Instagram Business API
+async function sendAutomatedDM(userId, userData, comment, post, hotwordConfig, igBusinessAccountId) {
     try {
-        // In production, use Instagram Graph API to send DM
-        // This is a simulation since DM sending requires additional permissions
-        console.log(`📨 [SIMULATION] Would send DM to ${comment.username}: ${hotwordConfig.dmMessage}`);
+        // Get the commenter's Instagram user ID
+        const commenterId = comment.from?.id;
+        
+        if (!commenterId) {
+            console.log('No commenter ID found');
+            return;
+        }
+
+        // Send DM using Instagram Business API
+        const dmResponse = await axios.post(`https://graph.facebook.com/v19.0/${igBusinessAccountId}/messages`, {
+            recipient: `{ "comment_id": "${comment.id}" }`,
+            message: `{ "text": "${hotwordConfig.dmMessage}" }`
+        }, {
+            params: {
+                access_token: userData.accessToken
+            }
+        });
+
+        console.log(`📨 DM sent to ${comment.username}: ${hotwordConfig.dmMessage}`);
         
         // Log the action
         const logEntry = {
@@ -144,9 +179,11 @@ async function sendAutomatedDM(userId, userData, comment, post, hotwordConfig) {
             commentId: comment.id,
             commentText: comment.text,
             commenter: comment.username,
+            commenterId: commenterId,
             hotword: hotwordConfig.word,
             dmMessage: hotwordConfig.dmMessage,
-            status: 'sent'
+            status: 'sent',
+            messageId: dmResponse.data.message_id
         };
         
         const userLogs = dmLogs.get(userId) || [];
@@ -156,11 +193,12 @@ async function sendAutomatedDM(userId, userData, comment, post, hotwordConfig) {
         logAction(userId, 'DM_SENT', {
             postId: post.id,
             commenter: comment.username,
-            hotword: hotwordConfig.word
+            hotword: hotwordConfig.word,
+            messageId: dmResponse.data.message_id
         });
         
     } catch (error) {
-        console.error('Error in sendAutomatedDM:', error);
+        console.error('Error sending DM:', error.response?.data || error.message);
         
         // Log failure
         const logEntry = {
@@ -173,7 +211,7 @@ async function sendAutomatedDM(userId, userData, comment, post, hotwordConfig) {
             hotword: hotwordConfig.word,
             dmMessage: hotwordConfig.dmMessage,
             status: 'failed',
-            error: error.message
+            error: error.response?.data?.error?.message || error.message
         };
         
         const userLogs = dmLogs.get(userId) || [];
@@ -189,27 +227,62 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Instagram OAuth - Start authentication
+// Health check endpoint for Render
+app.get('/health', (req, res) => {
+    res.json({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString(),
+        users: users.size,
+        uptime: process.uptime(),
+        environment: process.env.NODE_ENV || 'development'
+    });
+});
+
+// Instagram Business OAuth - Start authentication
 app.get('/auth/instagram', (req, res) => {
+    // Validate Instagram config
+    if (!INSTAGRAM_CONFIG.clientId || !INSTAGRAM_CONFIG.clientSecret) {
+        return res.status(500).send(`
+            <html>
+                <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                    <h2>Configuration Error</h2>
+                    <p>Instagram OAuth is not properly configured.</p>
+                    <p>Please set INSTAGRAM_CLIENT_ID and INSTAGRAM_CLIENT_SECRET environment variables.</p>
+                    <a href="/">Return to home</a>
+                </body>
+            </html>
+        `);
+    }
+
     const state = generateRandomId();
     req.session.oauthState = state;
     
-    const authUrl = `https://api.instagram.com/oauth/authorize?` +
-        `client_id=${INSTAGRAM_CONFIG.clientId}` +
+    // Use the exact Instagram Business authorization URL from your image
+    const authUrl = `https://www.instagram.com/oauth/authorize?` +
+        `force_reauth=true` +
+        `&client_id=${INSTAGRAM_CONFIG.clientId}` +
         `&redirect_uri=${encodeURIComponent(INSTAGRAM_CONFIG.redirectUri)}` +
-        `&scope=${encodeURIComponent(INSTAGRAM_CONFIG.scope)}` +
         `&response_type=code` +
+        `&scope=${encodeURIComponent(INSTAGRAM_CONFIG.scope)}` +
         `&state=${state}`;
     
     res.redirect(authUrl);
 });
 
-// Instagram OAuth - Callback
-app.get('/auth/instagram/callback', async (req, res) => {
+// Instagram Business OAuth - Callback
+app.get('/auth/callback', async (req, res) => {
     const { code, state, error } = req.query;
     
     if (error) {
-        return res.status(400).send(`Authorization failed: ${error}`);
+        return res.status(400).send(`
+            <html>
+                <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                    <h2>Authorization Failed</h2>
+                    <p>Error: ${error}</p>
+                    <a href="/">Return to home</a>
+                </body>
+            </html>
+        `);
     }
     
     if (state !== req.session.oauthState) {
@@ -217,7 +290,7 @@ app.get('/auth/instagram/callback', async (req, res) => {
     }
     
     try {
-        // Exchange code for access token
+        // Exchange code for access token using Instagram OAuth
         const tokenResponse = await axios.post('https://api.instagram.com/oauth/access_token', 
             new URLSearchParams({
                 client_id: INSTAGRAM_CONFIG.clientId,
@@ -234,43 +307,65 @@ app.get('/auth/instagram/callback', async (req, res) => {
         
         const { access_token, user_id } = tokenResponse.data;
         
-        // Get user profile
-        const profileResponse = await axios.get(`https://graph.instagram.com/me`, {
+        // For Instagram Business, we need to get the Facebook Page access token
+        // First, get the user's Facebook pages
+        const pagesResponse = await axios.get(`https://graph.facebook.com/v19.0/me/accounts`, {
             params: {
-                fields: 'id,username,account_type',
-                access_token: access_token
+                access_token: access_token,
+                fields: 'id,name,access_token,instagram_business_account{id,username,profile_picture_url}'
             }
         });
+
+        // Find the page with an Instagram Business account
+        const pageWithInstagram = pagesResponse.data.data.find(page => page.instagram_business_account);
         
+        if (!pageWithInstagram) {
+            return res.status(400).send(`
+                <html>
+                    <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                        <h2>No Instagram Business Account Found</h2>
+                        <p>Please connect an Instagram Business account to your Facebook Page.</p>
+                        <a href="/">Return to home</a>
+                    </body>
+                </html>
+            `);
+        }
+
         const userData = {
             id: user_id,
-            username: profileResponse.data.username,
-            accessToken: access_token,
-            accountType: profileResponse.data.account_type,
+            username: pageWithInstagram.instagram_business_account.username,
+            accessToken: pageWithInstagram.access_token, // Use page access token for Business API
+            pageId: pageWithInstagram.id,
+            igBusinessAccountId: pageWithInstagram.instagram_business_account.id,
+            profilePicture: pageWithInstagram.instagram_business_account.profile_picture_url,
             connectedAt: new Date().toISOString()
         };
         
         // Store user data
         users.set(user_id, userData);
         req.session.userId = user_id;
-        req.session.username = profileResponse.data.username;
+        req.session.username = userData.username;
         
         // Initialize user data structures
         if (!posts.has(user_id)) posts.set(user_id, new Map());
         if (!hotwords.has(user_id)) hotwords.set(user_id, new Map());
         if (!dmLogs.has(user_id)) dmLogs.set(user_id, []);
         
-        logAction(user_id, 'USER_CONNECTED', { username: userData.username });
+        logAction(user_id, 'USER_CONNECTED', { 
+            username: userData.username,
+            igBusinessAccountId: userData.igBusinessAccountId
+        });
         
         res.redirect('/dashboard');
         
     } catch (error) {
-        console.error('Instagram OAuth error:', error.response?.data || error.message);
+        console.error('Instagram Business OAuth error:', error.response?.data || error.message);
         res.status(500).send(`
             <html>
-                <body>
-                    <h2>Authentication failed</h2>
+                <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                    <h2>Authentication Failed</h2>
                     <p>Error: ${error.response?.data?.error_message || error.message}</p>
+                    <p>Please make sure your Instagram Business account is properly connected to a Facebook Page.</p>
                     <a href="/">Return to home</a>
                 </body>
             </html>
@@ -301,12 +396,13 @@ app.get('/api/user', (req, res) => {
     
     res.json({
         username: user.username,
-        accountType: user.accountType,
+        profilePicture: user.profilePicture,
+        igBusinessAccountId: user.igBusinessAccountId,
         connectedAt: user.connectedAt
     });
 });
 
-// Get user's Instagram posts
+// Get user's Instagram posts via Business API
 app.get('/api/posts', async (req, res) => {
     if (!req.session.userId) {
         return res.status(401).json({ error: 'Not authenticated' });
@@ -318,10 +414,10 @@ app.get('/api/posts', async (req, res) => {
     }
     
     try {
-        // Get user's media from Instagram API
-        const mediaResponse = await axios.get(`https://graph.instagram.com/me/media`, {
+        // Get user's media from Instagram Business API
+        const mediaResponse = await axios.get(`https://graph.facebook.com/v19.0/${user.igBusinessAccountId}/media`, {
             params: {
-                fields: 'id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,comments_count',
+                fields: 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,comments_count,like_count',
                 access_token: user.accessToken,
                 limit: 20
             }
@@ -345,36 +441,38 @@ app.get('/api/posts', async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error fetching posts:', error.response?.data || error.message);
+        console.error('Error fetching posts via Business API:', error.response?.data || error.message);
         
         // Return mock data for demo if API fails
         const mockPosts = [
             {
-                id: 'mock_post_1',
-                caption: 'Check out our amazing new product! #newarrival',
+                id: 'mock_business_post_1',
+                caption: 'Business Post: Check out our amazing new product! #newarrival',
                 media_type: 'IMAGE',
-                media_url: 'https://via.placeholder.com/500x500/667eea/white?text=Product+Post',
+                media_url: 'https://via.placeholder.com/500x500/667eea/white?text=Business+Post',
                 timestamp: new Date().toISOString(),
                 comments_count: 15,
+                like_count: 45,
                 hotwords: [],
-                media_display_url: 'https://via.placeholder.com/500x500/667eea/white?text=Product+Post'
+                media_display_url: 'https://via.placeholder.com/500x500/667eea/white?text=Business+Post'
             },
             {
-                id: 'mock_post_2',
-                caption: 'Limited time offer! Don\'t miss out! #sale',
+                id: 'mock_business_post_2',
+                caption: 'Business Exclusive: Limited time offer! #sale',
                 media_type: 'IMAGE',
-                media_url: 'https://via.placeholder.com/500x500/764ba2/white?text=Sale+Post',
+                media_url: 'https://via.placeholder.com/500x500/764ba2/white?text=Business+Exclusive',
                 timestamp: new Date(Date.now() - 86400000).toISOString(),
                 comments_count: 8,
+                like_count: 32,
                 hotwords: [],
-                media_display_url: 'https://via.placeholder.com/500x500/764ba2/white?text=Sale+Post'
+                media_display_url: 'https://via.placeholder.com/500x500/764ba2/white?text=Business+Exclusive'
             }
         ];
         
         res.json({ 
             success: true, 
             posts: mockPosts,
-            note: 'Using mock data - Instagram API unavailable'
+            note: 'Using mock data - Instagram Business API unavailable'
         });
     }
 });
@@ -457,19 +555,6 @@ app.delete('/api/posts/:postId/hotwords/:hotwordId', (req, res) => {
     res.json({ success: true, removed });
 });
 
-// Get hotwords for a post
-app.get('/api/posts/:postId/hotwords', (req, res) => {
-    if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-    }
-    
-    const { postId } = req.params;
-    const userHotwords = hotwords.get(req.session.userId) || new Map();
-    const postHotwords = userHotwords.get(postId) || [];
-    
-    res.json({ success: true, hotwords: postHotwords });
-});
-
 // Get DM logs
 app.get('/api/logs', (req, res) => {
     if (!req.session.userId) {
@@ -477,7 +562,7 @@ app.get('/api/logs', (req, res) => {
     }
     
     const userLogs = dmLogs.get(req.session.userId) || [];
-    res.json({ success: true, logs: userLogs.slice(0, 50) }); // Return last 50 logs
+    res.json({ success: true, logs: userLogs.slice(0, 50) });
 });
 
 // Simulate comment for testing
@@ -502,7 +587,8 @@ app.post('/api/simulate-comment', async (req, res) => {
         id: `simulated_comment_${generateRandomId()}`,
         text: commentText,
         username: 'test_user',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        from: { id: 'test_user_id' }
     };
     
     // Create mock post
@@ -514,7 +600,7 @@ app.post('/api/simulate-comment', async (req, res) => {
     // Process the comment
     for (const hotwordConfig of postHotwords) {
         if (commentText.toLowerCase().includes(hotwordConfig.word.toLowerCase())) {
-            await sendAutomatedDM(userId, user, mockComment, mockPost, hotwordConfig);
+            await sendAutomatedDM(userId, user, mockComment, mockPost, hotwordConfig, user.igBusinessAccountId);
             break;
         }
     }
@@ -533,19 +619,14 @@ app.post('/auth/logout', (req, res) => {
     res.json({ success: true });
 });
 
-// Health check
-app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'ok', 
-        timestamp: new Date().toISOString(),
-        users: users.size,
-        uptime: process.uptime()
-    });
-});
-
 // Start server
-app.listen(PORT, () => {
-    console.log(`🚀 Instagram DM Automation Platform running on http://localhost:${PORT}`);
-    console.log(`📱 Monitoring comments for Instagram automation...`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Instagram Business DM Automation Platform running on port ${PORT}`);
+    console.log(`📱 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🔗 Redirect URI: ${INSTAGRAM_CONFIG.redirectUri}`);
+    console.log(`🔑 Client ID: ${INSTAGRAM_CONFIG.clientId}`);
+    console.log(`👥 Monitoring comments for Instagram Business automation...`);
+    
+    // Start comment monitoring
     startCommentMonitoring();
 });

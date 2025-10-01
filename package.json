@@ -1,7 +1,7 @@
 {
   "name": "instagram-dm-automation",
   "version": "1.0.0",
-  "description": "Instagram DM Automation Platform similar to ManyChat",
+  "description": "Instagram DM Automation Platform with Basic Display API",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -19,10 +19,7 @@
     "instagram",
     "automation",
     "dm",
-    "manychat",
-    "marketing",
-    "business",
-    "api"
+    "basic-display-api"
   ],
   "author": "Your Name",
   "license": "MIT"

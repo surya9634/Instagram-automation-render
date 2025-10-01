@@ -1,19 +1,24 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>IG Hotword Automation</title>
+  <title>Hotword DM Setup</title>
 </head>
 <body>
-  <h2>Instagram Automation for <span id="username"></span></h2>
-
-  <form id="hotword-form">
-    <input type="hidden" id="ig_user_id">
-    <label>Post ID: </label><input type="text" id="post_id" placeholder="Instagram Post ID"><br>
-    <label>Hotword: </label><input type="text" id="hotword" placeholder="Keyword to trigger DM"><br>
-    <label>DM Reply: </label><input type="text" id="reply" placeholder="Message to send"><br>
-    <button type="submit">Save Hotword</button>
+  <h2>Set Hotword & DM</h2>
+  <form id="hotwordForm">
+    <input name="ig_user_id" placeholder="IG User ID" required><br>
+    <input name="post_id" placeholder="Post ID" required><br>
+    <input name="hotword" placeholder="Hotword" required><br>
+    <input name="reply" placeholder="DM Reply" required><br>
+    <button type="submit">Save</button>
   </form>
-
-  <script src="main.js"></script>
+  <script>
+    document.getElementById("hotwordForm").onsubmit = async e => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      const res = await fetch("/save-hotword", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(data) });
+      alert((await res.json()).success ? "Saved!" : "Error");
+    }
+  </script>
 </body>
 </html>

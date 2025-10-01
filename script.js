@@ -1,95 +1,70 @@
 import express from "express";
-import axios from "axios";
+import fetch from "node-fetch";
 import dotenv from "dotenv";
 
 dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 3000;
+app.use(express.static("public"));
 
-// Home page: link to start IG login
 app.get("/", (req, res) => {
-  const authUrl = `https://www.instagram.com/oauth/authorize?client_id=${process.env.APP_ID}&redirect_uri=${process.env.REDIRECT_URI}&scope=instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights,pages_show_list,pages_manage_metadata,pages_messaging&response_type=code&force_reauth=true`;
-
-  res.send(`
-    <h2>🚀 Instagram Automation Login</h2>
-    <a href="${authUrl}">
-      <button style="padding:10px 20px;font-size:16px;">Connect Instagram</button>
-    </a>
-  `);
+  res.sendFile("index.html", { root: "public" });
 });
 
 // OAuth callback
 app.get("/auth/callback", async (req, res) => {
-  const code = req.query.code;
-  if (!code) return res.status(400).send("❌ No code received");
+  const { code } = req.query;
+  if (!code) return res.status(400).send("Missing code");
 
   try {
-    // 1. Exchange code for access token
-    const tokenResp = await axios.get("https://graph.facebook.com/v21.0/oauth/access_token", {
-      params: {
+    // Step 1: Exchange code for short-lived IG token
+    const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
         client_id: process.env.APP_ID,
         client_secret: process.env.APP_SECRET,
+        grant_type: "authorization_code",
         redirect_uri: process.env.REDIRECT_URI,
-        code
-      }
+        code,
+      }),
     });
+    const tokenData = await tokenRes.json();
+    if (tokenData.error) return res.status(400).json(tokenData);
 
-    const userAccessToken = tokenResp.data.access_token;
-    console.log("✅ User Access Token:", userAccessToken);
+    const userToken = tokenData.access_token;
 
-    // 2. Fetch Pages the user manages
-    const pagesResp = await axios.get("https://graph.facebook.com/v21.0/me/accounts", {
-      params: { access_token: userAccessToken }
-    });
-
-    const pages = pagesResp.data.data;
-    console.log("📄 User Pages:", pages);
-
-    if (!pages.length) {
-      return res.send("❌ No Facebook Pages connected to this account.");
-    }
-
-    // 3. Find your platform’s Page
-    const platformPage = pages.find(p => p.id === process.env.PLATFORM_PAGE_ID);
-    if (!platformPage) {
-      return res.send("❌ User does not manage the required FB Page. Please connect your IG to our Page first.");
-    }
-
-    const pageAccessToken = platformPage.access_token;
-    console.log("✅ Platform Page Token:", pageAccessToken);
-
-    // 4. Fetch IG account connected to the Page
-    const igResp = await axios.get(
-      `https://graph.facebook.com/v21.0/${process.env.PLATFORM_PAGE_ID}`,
-      {
-        params: {
-          fields: "connected_instagram_account",
-          access_token: pageAccessToken
-        }
-      }
+    // Step 2: Get IG user info
+    const userRes = await fetch(
+      `https://graph.instagram.com/me?fields=id,username&access_token=${userToken}`
     );
+    const userData = await userRes.json();
 
-    console.log("📸 IG Connected:", igResp.data);
-
-    // 5. Subscribe Page to webhook events (DMs, comments)
-    const subResp = await axios.post(
+    // Step 3: Subscribe your Page to IG account (using YOUR Page Access Token)
+    const subscribeRes = await fetch(
       `https://graph.facebook.com/v21.0/${process.env.PLATFORM_PAGE_ID}/subscribed_apps`,
-      {},
-      { params: { access_token: pageAccessToken } }
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subscribed_fields: ["feed", "messages"]
+        }),
+        // ⚠️ send access_token as query param (not JSON body)
+      }
     );
-
-    console.log("🔔 Subscribed:", subResp.data);
+    const subscribeData = await subscribeRes.json();
 
     res.json({
       message: "✅ Instagram account connected to your Page successfully!",
-      instagramUser: igResp.data,
-      subscription: subResp.data
+      instagramUser: userData,
+      subscription: subscribeData,
     });
+
   } catch (err) {
-    console.error("❌ Error in callback:", err.response?.data || err.message);
-    res.status(500).json(err.response?.data || { error: err.message });
+    console.error(err);
+    res.status(500).send("Auth failed");
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 Server running at http://localhost:${PORT}`));
+app.listen(process.env.PORT || 3000, () => {
+  console.log(`🚀 Server running on port ${process.env.PORT || 3000}`);
+});

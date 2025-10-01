@@ -10,18 +10,19 @@
   "dependencies": {
     "express": "^4.18.2",
     "express-session": "^1.17.3",
-    "axios": "^1.6.0",
-    "crypto": "^1.0.1"
+    "axios": "^1.6.0"
   },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
+  "engines": {
+    "node": ">=18.0.0"
   },
   "keywords": [
     "instagram",
     "automation",
     "dm",
     "manychat",
-    "marketing"
+    "marketing",
+    "business",
+    "api"
   ],
   "author": "Your Name",
   "license": "MIT"

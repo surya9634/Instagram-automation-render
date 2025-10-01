@@ -1,92 +1,95 @@
 import express from "express";
-import fetch from "node-fetch";
-import cookieParser from "cookie-parser";
+import axios from "axios";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
-app.use(cookieParser());
+const PORT = process.env.PORT || 3000;
 
-const APP_ID = process.env.FB_APP_ID;
-const APP_SECRET = process.env.FB_APP_SECRET;
-const REDIRECT_URI = "https://instagram-automation-render.onrender.com/auth/callback";
+// Home page: link to start IG login
+app.get("/", (req, res) => {
+  const authUrl = `https://www.instagram.com/oauth/authorize?client_id=${process.env.APP_ID}&redirect_uri=${process.env.REDIRECT_URI}&scope=instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights,pages_show_list,pages_manage_metadata,pages_messaging&response_type=code&force_reauth=true`;
 
-// Step 1: Redirect user to Instagram login
-app.get("/auth/login", (req, res) => {
-  const authUrl = `https://www.instagram.com/oauth/authorize?client_id=${APP_ID}&redirect_uri=${encodeURIComponent(
-    REDIRECT_URI
-  )}&scope=instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights,pages_show_list,pages_manage_metadata,pages_messaging&response_type=code&force_reauth=true`;
-
-  res.redirect(authUrl);
+  res.send(`
+    <h2>🚀 Instagram Automation Login</h2>
+    <a href="${authUrl}">
+      <button style="padding:10px 20px;font-size:16px;">Connect Instagram</button>
+    </a>
+  `);
 });
 
-// Step 2: Handle callback and exchange code for token
+// OAuth callback
 app.get("/auth/callback", async (req, res) => {
   const code = req.query.code;
-
-  if (!code) {
-    return res.status(400).send("No code received from Instagram");
-  }
+  if (!code) return res.status(400).send("❌ No code received");
 
   try {
-    // Exchange code for user token
-    const tokenRes = await fetch(
-      `https://graph.facebook.com/v21.0/oauth/access_token?client_id=${APP_ID}&client_secret=${APP_SECRET}&redirect_uri=${encodeURIComponent(
-        REDIRECT_URI
-      )}&code=${code}`,
-      { method: "GET" }
+    // 1. Exchange code for access token
+    const tokenResp = await axios.get("https://graph.facebook.com/v21.0/oauth/access_token", {
+      params: {
+        client_id: process.env.APP_ID,
+        client_secret: process.env.APP_SECRET,
+        redirect_uri: process.env.REDIRECT_URI,
+        code
+      }
+    });
+
+    const userAccessToken = tokenResp.data.access_token;
+    console.log("✅ User Access Token:", userAccessToken);
+
+    // 2. Fetch Pages the user manages
+    const pagesResp = await axios.get("https://graph.facebook.com/v21.0/me/accounts", {
+      params: { access_token: userAccessToken }
+    });
+
+    const pages = pagesResp.data.data;
+    console.log("📄 User Pages:", pages);
+
+    if (!pages.length) {
+      return res.send("❌ No Facebook Pages connected to this account.");
+    }
+
+    // 3. Find your platform’s Page
+    const platformPage = pages.find(p => p.id === process.env.PLATFORM_PAGE_ID);
+    if (!platformPage) {
+      return res.send("❌ User does not manage the required FB Page. Please connect your IG to our Page first.");
+    }
+
+    const pageAccessToken = platformPage.access_token;
+    console.log("✅ Platform Page Token:", pageAccessToken);
+
+    // 4. Fetch IG account connected to the Page
+    const igResp = await axios.get(
+      `https://graph.facebook.com/v21.0/${process.env.PLATFORM_PAGE_ID}`,
+      {
+        params: {
+          fields: "connected_instagram_account",
+          access_token: pageAccessToken
+        }
+      }
     );
-    const tokenData = await tokenRes.json();
 
-    if (tokenData.error) {
-      return res.json({ error: tokenData.error });
-    }
+    console.log("📸 IG Connected:", igResp.data);
 
-    const userAccessToken = tokenData.access_token;
-
-    // Get Pages the user manages
-    const pagesRes = await fetch(
-      `https://graph.facebook.com/v21.0/me/accounts?access_token=${userAccessToken}`
+    // 5. Subscribe Page to webhook events (DMs, comments)
+    const subResp = await axios.post(
+      `https://graph.facebook.com/v21.0/${process.env.PLATFORM_PAGE_ID}/subscribed_apps`,
+      {},
+      { params: { access_token: pageAccessToken } }
     );
-    const pagesData = await pagesRes.json();
 
-    if (pagesData.error) {
-      return res.json({ error: pagesData.error });
-    }
+    console.log("🔔 Subscribed:", subResp.data);
 
-    // Pick first page (you can add UI for user to choose)
-    const page = pagesData.data[0];
-    if (!page) {
-      return res.json({ error: "No pages found for this user." });
-    }
-
-    const pageAccessToken = page.access_token;
-    const pageId = page.id;
-
-    // Get Instagram Business account linked to this Page
-    const igRes = await fetch(
-      `https://graph.facebook.com/v21.0/${pageId}?fields=connected_instagram_account&access_token=${pageAccessToken}`
-    );
-    const igData = await igRes.json();
-
-    if (igData.error) {
-      return res.json({ error: igData.error });
-    }
-
-    return res.json({
+    res.json({
       message: "✅ Instagram account connected to your Page successfully!",
-      page: page,
-      instagramAccount: igData.connected_instagram_account || "No IG connected",
+      instagramUser: igResp.data,
+      subscription: subResp.data
     });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("❌ Error in callback:", err.response?.data || err.message);
+    res.status(500).json(err.response?.data || { error: err.message });
   }
 });
 
-app.get("/", (req, res) => {
-  res.send(`<a href="/auth/login">Connect Instagram</a>`);
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
-});
+app.listen(PORT, () => console.log(`🚀 Server running at http://localhost:${PORT}`));

@@ -1,16 +1,24 @@
 import express from "express";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
+import bodyParser from "body-parser";
+import fs from "fs";
 
 dotenv.config();
 const app = express();
 app.use(express.static("public"));
+app.use(bodyParser.json());
 
-app.get("/", (req, res) => {
-  res.sendFile("index.html", { root: "public" });
-});
+// Temp storage for hotwords
+const HOTWORDS_FILE = "./hotwords.json";
+let hotwords = {};
+if (fs.existsSync(HOTWORDS_FILE)) {
+  hotwords = JSON.parse(fs.readFileSync(HOTWORDS_FILE));
+}
 
-// OAuth callback
+// --------------------
+// Instagram OAuth
+// --------------------
 app.get("/auth/callback", async (req, res) => {
   const { code } = req.query;
   if (!code) return res.status(400).send("Missing code");
@@ -39,25 +47,21 @@ app.get("/auth/callback", async (req, res) => {
     );
     const userData = await userRes.json();
 
-    // Step 3: Subscribe YOUR FB Page to receive this IG account’s DMs
-    // ⚠️ Use your permanent PAGE_ACCESS_TOKEN from .env
+    // Step 3: Subscribe YOUR Page to this IG account
     const subscribeRes = await fetch(
       `https://graph.facebook.com/v21.0/${process.env.PAGE_ID}/subscribed_apps?access_token=${process.env.PAGE_ACCESS_TOKEN}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          subscribed_fields: ["messages", "feed", "comments"]
+          subscribed_fields: ["messages","feed"]
         }),
       }
     );
     const subscribeData = await subscribeRes.json();
 
-    res.json({
-      message: "✅ Instagram account connected to your Page successfully!",
-      instagramUser: userData,
-      subscription: subscribeData,
-    });
+    // Redirect to frontend UI with IG username
+    res.redirect(`/ui.html?username=${userData.username}&id=${userData.id}`);
 
   } catch (err) {
     console.error(err);
@@ -65,6 +69,28 @@ app.get("/auth/callback", async (req, res) => {
   }
 });
 
+// --------------------
+// Hotwords API
+// --------------------
+app.post("/save-hotword", (req, res) => {
+  const { ig_user_id, post_id, hotword, reply } = req.body;
+  if (!ig_user_id || !post_id || !hotword || !reply) return res.status(400).send("Missing fields");
+
+  if (!hotwords[ig_user_id]) hotwords[ig_user_id] = [];
+  hotwords[ig_user_id].push({ post_id, hotword, reply });
+
+  fs.writeFileSync(HOTWORDS_FILE, JSON.stringify(hotwords, null, 2));
+  res.json({ success: true });
+});
+
+// --------------------
+// Get Hotwords (optional for UI)
+app.get("/hotwords/:ig_user_id", (req,res)=>{
+  const ig_user_id = req.params.ig_user_id;
+  res.json(hotwords[ig_user_id] || []);
+});
+
+// --------------------
 app.listen(process.env.PORT || 3000, () => {
   console.log(`🚀 Server running on port ${process.env.PORT || 3000}`);
 });

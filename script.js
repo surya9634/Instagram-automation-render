@@ -31,31 +31,42 @@ app.get("/auth/callback", async (req, res) => {
     const tokenData = await tokenRes.json();
     if (tokenData.error) return res.status(400).json(tokenData);
 
-    const userToken = tokenData.access_token;
+    const shortLivedToken = tokenData.access_token;
 
-    // Step 2: Get IG user info
-    const userRes = await fetch(
-      `https://graph.instagram.com/me?fields=id,username&access_token=${userToken}`
+    // Step 2: Exchange for long-lived token
+    const longTokenRes = await fetch(
+      `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${process.env.APP_SECRET}&access_token=${shortLivedToken}`
     );
-    const userData = await userRes.json();
+    const longTokenData = await longTokenRes.json();
+    const userToken = longTokenData.access_token;
 
-    // Step 3: Subscribe your Page to IG account (using YOUR Page Access Token)
+    // Step 3: Get FB Pages connected to this IG account
+    const pagesRes = await fetch(
+      `https://graph.facebook.com/v21.0/me/accounts?access_token=${userToken}`
+    );
+    const pagesData = await pagesRes.json();
+
+    if (!pagesData.data || !pagesData.data.length) {
+      return res.status(400).json({ error: "No Facebook Pages found linked to this account" });
+    }
+
+    // Take first Page
+    const page = pagesData.data[0];
+    const pageAccessToken = page.access_token;
+
+    // Step 4: Subscribe the Page for IG DMs
     const subscribeRes = await fetch(
-      `https://graph.facebook.com/v21.0/${process.env.PLATFORM_PAGE_ID}/subscribed_apps`,
+      `https://graph.facebook.com/v21.0/${page.id}/subscribed_apps?access_token=${pageAccessToken}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subscribed_fields: ["feed", "messages"]
-        }),
-        // ⚠️ send access_token as query param (not JSON body)
       }
     );
     const subscribeData = await subscribeRes.json();
 
     res.json({
       message: "✅ Instagram account connected to your Page successfully!",
-      instagramUser: userData,
+      instagramUser: tokenData,
+      page: page,
       subscription: subscribeData,
     });
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instagram DM Automation</title>
+    <title>Instagram Business DM Automation</title>
     <style>
         * {
             margin: 0;
@@ -308,24 +308,40 @@
             margin-bottom: 20px;
             opacity: 0.5;
         }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-connected {
+            background: #28a745;
+        }
+
+        .status-disconnected {
+            background: #dc3545;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <!-- Authentication Section -->
         <div id="authSection" class="auth-section card">
-            <h1 style="color: #667eea; margin-bottom: 20px;">🤖 Instagram DM Automation</h1>
+            <h1 style="color: #667eea; margin-bottom: 20px;">🤖 Instagram Business DM Automation</h1>
             <p style="margin-bottom: 30px; color: #666; font-size: 1.1rem;">
-                Automate your Instagram direct messages based on comment triggers. 
-                Connect your Instagram Business/Creator account to get started.
+                Automate your Instagram Business direct messages based on comment triggers. 
+                Connect your Instagram Business account to get started.
             </p>
             <button class="btn" onclick="connectInstagram()" style="padding: 15px 30px; font-size: 1.1rem;">
-                🔗 Connect Instagram Account
+                🔗 Connect Instagram Business Account
             </button>
             <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
                 <h3 style="color: #495057; margin-bottom: 10px;">How it works:</h3>
                 <ol style="text-align: left; color: #666; line-height: 1.8;">
-                    <li>Connect your Instagram Business/Creator account</li>
+                    <li>Connect your Instagram Business account</li>
                     <li>Select posts you want to monitor</li>
                     <li>Add trigger words (hotwords) for each post</li>
                     <li>Set automated DM responses</li>
@@ -339,7 +355,7 @@
             <div class="user-header">
                 <div class="user-info">
                     <h2>Welcome, <span id="username"></span>! 👋</h2>
-                    <p>Manage your Instagram DM automation below</p>
+                    <p>Manage your Instagram Business DM automation below</p>
                 </div>
                 <button class="btn btn-secondary" onclick="logout()">
                     🚪 Logout
@@ -360,6 +376,13 @@
                     <div class="stat-number" id="statDms">0</div>
                     <div class="stat-label">DMs Sent</div>
                 </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="statStatus">
+                        <span class="status-indicator status-connected"></span>
+                        Connected
+                    </div>
+                    <div class="stat-label">Account Status</div>
+                </div>
             </div>
 
             <div class="tab-container">
@@ -372,7 +395,7 @@
                 <!-- Posts & Hotwords Tab -->
                 <div id="postsTab" class="tab-content active">
                     <div class="card">
-                        <h3 style="margin-bottom: 20px;">Your Instagram Posts</h3>
+                        <h3 style="margin-bottom: 20px;">Your Instagram Business Posts</h3>
                         <div id="postsList" class="loading">
                             Loading your posts...
                         </div>
@@ -531,6 +554,7 @@
                 document.getElementById('postsList').innerHTML = `
                     <div class="alert alert-error">
                         <strong>Error loading posts:</strong> ${error.message}
+                        ${error.message.includes('mock data') ? '<br><small>This is expected if Instagram API is not fully configured.</small>' : ''}
                     </div>
                 `;
             }
@@ -544,7 +568,7 @@
                     <div class="empty-state">
                         <div style="font-size: 4rem; margin-bottom: 20px;">📱</div>
                         <h3 style="color: #6c757d; margin-bottom: 10px;">No Posts Found</h3>
-                        <p>Make sure your Instagram account has public posts or try reconnecting your account.</p>
+                        <p>Make sure your Instagram Business account has posts or try reconnecting your account.</p>
                     </div>
                 `;
                 return;
@@ -553,14 +577,15 @@
             container.innerHTML = posts.map(post => `
                 <div class="post-card">
                     <div class="post-media">
-                        <img src="${post.media_display_url || 'https://via.placeholder.com/500x500/667eea/white?text=Instagram+Post'}" 
+                        <img src="${post.media_display_url || 'https://via.placeholder.com/500x500/667eea/white?text=Instagram+Business+Post'}" 
                              alt="Post" onerror="this.src='https://via.placeholder.com/500x500/667eea/white?text=Image+Not+Available'">
                     </div>
                     <div style="margin-bottom: 15px;">
                         <p style="font-weight: 500; margin-bottom: 5px;">${post.caption ? post.caption.substring(0, 120) + (post.caption.length > 120 ? '...' : '') : 'No caption'}</p>
                         <small style="color: #6c757d;">
                             Posted: ${new Date(post.timestamp).toLocaleDateString()} • 
-                            Comments: ${post.comments_count || 0}
+                            Comments: ${post.comments_count || 0} •
+                            Likes: ${post.like_count || 0}
                         </small>
                     </div>
                     

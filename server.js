@@ -8,7 +8,7 @@ const app = express();
 app.use(express.static("public"));
 app.use(bodyParser.json());
 
-// Hotwords storage (in-memory)
+// In-memory hotword storage
 const hotwords = {};
 
 // ---------------- OAuth callback ----------------
@@ -25,7 +25,7 @@ app.get("/auth/callback", async (req, res) => {
         client_id: process.env.APP_ID,
         client_secret: process.env.APP_SECRET,
         grant_type: "authorization_code",
-        redirect_uri: process.env.REDIRECT_URI, // must match the OAuth URL
+        redirect_uri: process.env.REDIRECT_URI,
         code,
       }),
     });
@@ -38,7 +38,7 @@ app.get("/auth/callback", async (req, res) => {
     const userRes = await fetch(`https://graph.instagram.com/me?fields=id,username&access_token=${igUserToken}`);
     const userData = await userRes.json();
 
-    // Redirect to simple UI for setting hotwords
+    // Redirect to simple UI for hotwords
     res.redirect(`/ui.html?username=${userData.username}&id=${userData.id}`);
   } catch (err) {
     console.error(err);
@@ -66,7 +66,7 @@ app.post("/webhook", async (req, res) => {
         for (const ig_user_id in hotwords) {
           for (const mapping of hotwords[ig_user_id]) {
             if (mapping.post_id === media_id && text.toLowerCase().includes(mapping.hotword.toLowerCase())) {
-              await fetch(`https://graph.facebook.com/v21.0/${ig_user_id}/messages?access_token=${process.env.PAGE_ACCESS_TOKEN}`, {
+              await fetch(`https://graph.facebook.com/v21.0/${process.env.PAGE_ID}/messages?access_token=${process.env.PAGE_ACCESS_TOKEN}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ recipient: { id: from.id }, message: { text: mapping.reply } })

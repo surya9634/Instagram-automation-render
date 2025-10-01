@@ -1,12 +1,15 @@
 {
-  "name": "ig-comment-dm-automation",
+  "name": "instagram-automation",
   "version": "1.0.0",
-  "description": "ManyChat-style Instagram comment-to-DM automation SaaS",
+  "description": "ManyChat-style Instagram comment-to-DM automation",
   "main": "server.js",
   "type": "module",
   "scripts": {
     "start": "node server.js",
     "webhook": "node webhook.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "express": "^4.18.2",

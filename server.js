@@ -8,8 +8,8 @@ const app = express();
 app.use(express.static("public"));
 app.use(bodyParser.json());
 
-// Hotwords storage (in-memory for simplicity)
-const hotwords = {}; // { ig_user_id: [ { post_id, hotword, reply } ] }
+// Hotwords storage (in-memory)
+const hotwords = {};
 
 // ---------------- OAuth callback ----------------
 app.get("/auth/callback", async (req, res) => {
@@ -17,7 +17,7 @@ app.get("/auth/callback", async (req, res) => {
   if (!code) return res.send("Missing code");
 
   try {
-    // Exchange code for IG token
+    // Exchange code for IG access token
     const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -25,19 +25,23 @@ app.get("/auth/callback", async (req, res) => {
         client_id: process.env.APP_ID,
         client_secret: process.env.APP_SECRET,
         grant_type: "authorization_code",
-        redirect_uri: process.env.REDIRECT_URI,
+        redirect_uri: process.env.REDIRECT_URI, // must match the OAuth URL
         code,
       }),
     });
     const tokenData = await tokenRes.json();
+    if (tokenData.error) return res.json(tokenData);
+
     const igUserToken = tokenData.access_token;
 
     // Get IG user info
     const userRes = await fetch(`https://graph.instagram.com/me?fields=id,username&access_token=${igUserToken}`);
     const userData = await userRes.json();
 
+    // Redirect to simple UI for setting hotwords
     res.redirect(`/ui.html?username=${userData.username}&id=${userData.id}`);
-  } catch {
+  } catch (err) {
+    console.error(err);
     res.send("Auth failed");
   }
 });

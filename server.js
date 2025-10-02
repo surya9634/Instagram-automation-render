@@ -1,647 +1,312 @@
+/* server.js
+   Single-file backend for Instagram comment->DM automation prototype.
+   - Serves index.html
+   - Implements OAuth redirect + callback
+   - Provides endpoints to list posts, create configs (hotwords/msg)
+   - Implements webhook verification & comment event handler
+   - Uses an in-memory store (replaceable with real DB)
+   NOTE: This is a prototype. In production: HTTPS, secure token storage,
+   persistent DB, error handling, background workers, app review, rate limiting.
+*/
+
 const express = require('express');
-const session = require('express-session');
 const axios = require('axios');
 const path = require('path');
-const crypto = require('crypto');
+const bodyParser = require('body-parser');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Trust proxy for Render
-app.set('trust proxy', 1);
+// --- CONFIG (use real env vars in production) ---
+const APP_ID = process.env.APP_ID || 'YOUR_APP_ID';
+const APP_SECRET = process.env.APP_SECRET || 'YOUR_APP_SECRET';
+const REDIRECT_URI = process.env.REDIRECT_URI || `http://localhost:${PORT}/auth/callback`;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'verify_token_example';
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
+// --- Simple in-memory store (replace with DB) ---
+/*
+ Structure:
+ users = {
+   <userId>: {
+     appUserId, // our assigned id
+     ig_user_id, // instagram business account id
+     page_access_token, // page token (used to call IG messaging endpoints)
+     short_lived_token,
+     long_lived_token,
+     configs: {
+       // postId -> [ {hotword: 'hello', reply: 'Hi there!'} , ... ]
+     },
+     logs: [ {when, postId, commenter_id, commenter_username, comment_text, reply_sent} ]
+   }
+ }
+*/
+const users = {}; // keyed by a simple session id (in a cookie) for the prototype
 
-// Enhanced session configuration for Render
-app.use(session({
-    secret: process.env.SESSION_SECRET || 'instagram-dm-automation-secret-key-2024',
-    resave: true,
-    saveUninitialized: true,
-    cookie: {
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 24 * 60 * 60 * 1000,
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        httpOnly: true
-    },
-    proxy: true
-}));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public'))); // serve index.html from /public (or root)
 
-// In-memory storage
-const users = new Map();
-const posts = new Map();
-const hotwords = new Map();
-const dmLogs = new Map();
-
-// Facebook App Configuration for Instagram Business API
-const FACEBOOK_CONFIG = {
-    clientId: process.env.FACEBOOK_CLIENT_ID || '1477959410285896',
-    clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
-    redirectUri: process.env.REDIRECT_URI || 'https://instagram-automation-render.onrender.com/auth/callback',
-    // Facebook permissions needed for Instagram Business API
-    scope: 'business_management,instagram_basic,instagram_manage_messages,instagram_manage_comments,pages_show_list,pages_read_engagement'
-};
-
-// Utility functions
-function generateRandomId() {
-    return crypto.randomBytes(16).toString('hex');
-}
-
-function logAction(userId, action, details) {
-    console.log(`[${new Date().toISOString()}] User ${userId}: ${action}`, details);
-}
-
-// Start background comment monitoring
-function startCommentMonitoring() {
-    setInterval(() => {
-        monitorComments();
-    }, 30000);
-}
-
-// Monitor comments for all users
-async function monitorComments() {
-    for (const [userId, userData] of users.entries()) {
-        try {
-            await checkUserComments(userId, userData);
-        } catch (error) {
-            console.error(`Error monitoring comments for user ${userId}:`, error.message);
-        }
-    }
-}
-
-// Check comments for a specific user
-async function checkUserComments(userId, userData) {
-    const userPosts = posts.get(userId) || new Map();
-    const userHotwords = hotwords.get(userId) || new Map();
-    
-    if (userPosts.size === 0 || !userData.igBusinessAccountId || !userData.pageAccessToken) return;
-
-    try {
-        // Get user's media from Instagram Business Account
-        const mediaResponse = await axios.get(`https://graph.facebook.com/v19.0/${userData.igBusinessAccountId}/media`, {
-            params: {
-                fields: 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,comments_count,like_count',
-                access_token: userData.pageAccessToken,
-                limit: 20
-            }
-        });
-
-        for (const post of mediaResponse.data.data) {
-            await processPostComments(userId, userData, post, userHotwords);
-        }
-    } catch (error) {
-        console.error(`Error fetching media for user ${userId}:`, error.response?.data || error.message);
-    }
-}
-
-// Process comments for a specific post
-async function processPostComments(userId, userData, post, userHotwords) {
-    const postHotwords = userHotwords.get(post.id) || [];
-    if (postHotwords.length === 0) return;
-
-    try {
-        // Get comments for this post using Instagram Business API
-        const commentsResponse = await axios.get(`https://graph.facebook.com/v19.0/${post.id}/comments`, {
-            params: {
-                fields: 'id,text,username,from',
-                access_token: userData.pageAccessToken
-            }
-        });
-
-        for (const comment of commentsResponse.data.data) {
-            await processComment(userId, userData, post, comment, postHotwords);
-        }
-    } catch (error) {
-        console.error(`Error fetching comments for post ${post.id}:`, error.response?.data || error.message);
-    }
-}
-
-// Process individual comment
-async function processComment(userId, userData, post, comment, postHotwords) {
-    const commentText = comment.text.toLowerCase();
-    const commentId = comment.id;
-    
-    // Check if we already processed this comment
-    const userLogs = dmLogs.get(userId) || [];
-    const alreadyProcessed = userLogs.some(log => 
-        log.commentId === commentId && log.postId === post.id
-    );
-    
-    if (alreadyProcessed) return;
-
-    // Check for matching hotwords
-    for (const hotwordConfig of postHotwords) {
-        if (commentText.includes(hotwordConfig.word.toLowerCase())) {
-            await sendAutomatedDM(userId, userData, comment, post, hotwordConfig);
-            break;
-        }
-    }
-}
-
-// Send automated DM using Instagram Business API
-async function sendAutomatedDM(userId, userData, comment, post, hotwordConfig) {
-    try {
-        // Send DM using Instagram Business API
-        const dmResponse = await axios.post(`https://graph.facebook.com/v19.0/${userData.igBusinessAccountId}/messages`, {
-            recipient: `{"comment_id":"${comment.id}"}`,
-            message: `{"text":"${hotwordConfig.dmMessage}"}`
-        }, {
-            params: {
-                access_token: userData.pageAccessToken
-            }
-        });
-
-        console.log(`📨 DM sent to ${comment.username}: ${hotwordConfig.dmMessage}`);
-        
-        // Log the action
-        const logEntry = {
-            id: generateRandomId(),
-            timestamp: new Date().toISOString(),
-            postId: post.id,
-            postCaption: post.caption ? post.caption.substring(0, 100) + '...' : 'No caption',
-            commentId: comment.id,
-            commentText: comment.text,
-            commenter: comment.username,
-            commenterId: comment.from?.id,
-            hotword: hotwordConfig.word,
-            dmMessage: hotwordConfig.dmMessage,
-            status: 'sent',
-            messageId: dmResponse.data.message_id
-        };
-        
-        const userLogs = dmLogs.get(userId) || [];
-        userLogs.unshift(logEntry);
-        dmLogs.set(userId, userLogs);
-        
-        logAction(userId, 'DM_SENT', {
-            postId: post.id,
-            commenter: comment.username,
-            hotword: hotwordConfig.word,
-            messageId: dmResponse.data.message_id
-        });
-        
-    } catch (error) {
-        console.error('Error sending DM:', error.response?.data || error.message);
-        
-        // Log failure
-        const logEntry = {
-            id: generateRandomId(),
-            timestamp: new Date().toISOString(),
-            postId: post.id,
-            commentId: comment.id,
-            commentText: comment.text,
-            commenter: comment.username,
-            hotword: hotwordConfig.word,
-            dmMessage: hotwordConfig.dmMessage,
-            status: 'failed',
-            error: error.response?.data?.error?.message || error.message
-        };
-        
-        const userLogs = dmLogs.get(userId) || [];
-        userLogs.unshift(logEntry);
-        dmLogs.set(userId, userLogs);
-    }
-}
-
-// Routes
-
-// Serve main page
+// serve index.html at root
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'ok', 
-        timestamp: new Date().toISOString(),
-        users: users.size,
-        uptime: process.uptime(),
-        environment: process.env.NODE_ENV || 'development'
-    });
+/* ====== OAuth: /auth/instagram -> redirect to login ======
+   We redirect the user to Meta's OAuth page requesting permissions.
+   The permission names can vary. For full messaging & page listing you typically need:
+   - instagram_basic
+   - pages_show_list
+   - pages_read_engagement
+   - instagram_manage_messages
+   - instagram_manage_comments
+   - pages_messaging
+   Adjust scopes in developer console and during app review.
+*/
+app.get('/auth/instagram', (req, res) => {
+  // state should be random + validated in production
+  const state = Math.random().toString(36).slice(2);
+  // Use Facebook Login dialog with Instagram permissions (Meta docs)
+  const scopes = [
+    'pages_show_list',
+    'instagram_basic',
+    'instagram_manage_comments',
+    'instagram_manage_messages',
+    'pages_messaging',
+    'pages_read_engagement'
+  ].join(',');
+  // Note: Many flows use the "https://www.facebook.com/v{version}/dialog/oauth" endpoint
+  const oauthUrl = `https://www.facebook.com/v17.0/dialog/oauth?client_id=${APP_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${state}&scope=${encodeURIComponent(scopes)}`;
+  res.redirect(oauthUrl);
 });
 
-// Facebook OAuth for Instagram Business API
-app.get('/auth/facebook', (req, res) => {
-    // Validate Facebook config
-    if (!FACEBOOK_CONFIG.clientId || !FACEBOOK_CONFIG.clientSecret) {
-        return res.status(500).send(`
-            <html>
-                <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-                    <h2>Configuration Error</h2>
-                    <p>Facebook OAuth is not properly configured.</p>
-                    <p>Please set FACEBOOK_CLIENT_ID and FACEBOOK_CLIENT_SECRET environment variables.</p>
-                    <a href="/">Return to home</a>
-                </body>
-            </html>
-        `);
-    }
-
-    const state = generateRandomId();
-    req.session.oauthState = state;
-    
-    // Facebook OAuth URL for Instagram Business API
-    const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?` +
-        `client_id=${FACEBOOK_CONFIG.clientId}` +
-        `&redirect_uri=${encodeURIComponent(FACEBOOK_CONFIG.redirectUri)}` +
-        `&scope=${encodeURIComponent(FACEBOOK_CONFIG.scope)}` +
-        `&response_type=code` +
-        `&state=${state}`;
-    
-    console.log('🔐 Facebook OAuth Initiated for Instagram Business API');
-    
-    req.session.save((err) => {
-        if (err) {
-            console.error('Session save error:', err);
-            return res.status(500).send('Session error');
-        }
-        res.redirect(authUrl);
-    });
-});
-
-// Facebook OAuth Callback
+/* ====== Callback: exchange code for user access token ======
+   This endpoint handles the code, exchanges for short-lived token, swaps for long-lived token,
+   gets list of pages, finds the connected Instagram Business account and saves tokens.
+*/
 app.get('/auth/callback', async (req, res) => {
-    const { code, state, error, error_reason, error_description } = req.query;
-    
-    console.log('🔐 Facebook OAuth Callback Received:', {
-        code: code ? 'present' : 'missing',
-        state: state,
-        sessionState: req.session.oauthState,
-        error: error
+  try {
+    const { code, state } = req.query;
+    if (!code) return res.status(400).send('Missing code parameter from OAuth callback.');
+
+    // 1) Exchange code for short-lived user access token
+    const tokenRes = await axios.get('https://graph.facebook.com/v17.0/oauth/access_token', {
+      params: {
+        client_id: APP_ID,
+        redirect_uri: REDIRECT_URI,
+        client_secret: APP_SECRET,
+        code
+      }
     });
-    
-    if (error) {
-        return res.status(400).send(`
-            <html>
-                <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-                    <h2>Authorization Failed</h2>
-                    <p>Error: ${error}</p>
-                    <p>Reason: ${error_reason}</p>
-                    <p>Description: ${error_description}</p>
-                    <a href="/">Return to home</a>
-                </body>
-            </html>
-        `);
-    }
-    
-    // State validation
-    if (!state || !req.session.oauthState || state !== req.session.oauthState) {
-        console.error('State validation failed');
-        return res.status(400).send('Invalid state parameter');
-    }
-    
-    req.session.oauthState = null;
-    
-    try {
-        console.log('🔄 Exchanging code for Facebook access token...');
-        
-        // Step 1: Exchange code for Facebook access token
-        const tokenResponse = await axios.get(`https://graph.facebook.com/v19.0/oauth/access_token`, {
-            params: {
-                client_id: FACEBOOK_CONFIG.clientId,
-                client_secret: FACEBOOK_CONFIG.clientSecret,
-                redirect_uri: FACEBOOK_CONFIG.redirectUri,
-                code: code
-            }
-        });
-        
-        const { access_token } = tokenResponse.data;
-        console.log('✅ Facebook access token received');
-        
-        // Step 2: Get long-lived token (60 days)
-        const longLivedResponse = await axios.get(`https://graph.facebook.com/v19.0/oauth/access_token`, {
-            params: {
-                grant_type: 'fb_exchange_token',
-                client_id: FACEBOOK_CONFIG.clientId,
-                client_secret: FACEBOOK_CONFIG.clientSecret,
-                fb_exchange_token: access_token
-            }
-        });
-        
-        const longLivedToken = longLivedResponse.data.access_token;
-        console.log('✅ Long-lived Facebook access token received');
-        
-        // Step 3: Get user's Facebook pages
-        const pagesResponse = await axios.get(`https://graph.facebook.com/v19.0/me/accounts`, {
-            params: {
-                access_token: longLivedToken,
-                fields: 'id,name,access_token,instagram_business_account{id,username,profile_picture_url,followers_count}'
-            }
-        });
 
-        // Find pages with Instagram Business accounts
-        const pagesWithInstagram = pagesResponse.data.data.filter(page => page.instagram_business_account);
-        
-        if (pagesWithInstagram.length === 0) {
-            return res.status(400).send(`
-                <html>
-                    <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-                        <h2>No Instagram Business Account Found</h2>
-                        <p>Please make sure:</p>
-                        <ol style="text-align: left; display: inline-block;">
-                            <li>Your Instagram account is a Business account</li>
-                            <li>It's connected to a Facebook Page you manage</li>
-                            <li>You have the required permissions</li>
-                        </ol>
-                        <a href="/">Return to home</a>
-                    </body>
-                </html>
-            `);
-        }
-
-        // For now, use the first Instagram Business account found
-        const page = pagesWithInstagram[0];
-        const igBusinessAccount = page.instagram_business_account;
-
-        const userData = {
-            id: generateRandomId(), // Generate our own user ID since we're using Facebook login
-            username: igBusinessAccount.username,
-            accessToken: longLivedToken, // Long-lived Facebook token
-            pageAccessToken: page.access_token, // Page access token for Instagram Business API
-            pageId: page.id,
-            pageName: page.name,
-            igBusinessAccountId: igBusinessAccount.id,
-            profilePicture: igBusinessAccount.profile_picture_url,
-            followersCount: igBusinessAccount.followers_count,
-            connectedAt: new Date().toISOString()
-        };
-        
-        // Store user data
-        const userId = userData.id;
-        users.set(userId, userData);
-        req.session.userId = userId;
-        req.session.username = userData.username;
-        
-        // Initialize user data structures
-        if (!posts.has(userId)) posts.set(userId, new Map());
-        if (!hotwords.has(userId)) hotwords.set(userId, new Map());
-        if (!dmLogs.has(userId)) dmLogs.set(userId, []);
-        
-        console.log('✅ Instagram Business account connected:', userData.username);
-        
-        res.redirect('/dashboard');
-        
-    } catch (error) {
-        console.error('❌ OAuth process error:', {
-            message: error.message,
-            response: error.response?.data,
-            status: error.response?.status
-        });
-        
-        let errorMessage = 'Authentication failed';
-        if (error.response?.data?.error?.message) {
-            errorMessage = error.response.data.error.message;
-        } else {
-            errorMessage = error.message;
-        }
-        
-        res.status(500).send(`
-            <html>
-                <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-                    <h2>Authentication Failed</h2>
-                    <p>Error: ${errorMessage}</p>
-                    <div style="text-align: left; max-width: 500px; margin: 20px auto; background: #f8f9fa; padding: 20px; border-radius: 8px;">
-                        <h3>Required Setup:</h3>
-                        <ol>
-                            <li>Your Instagram account must be a Business account</li>
-                            <li>It must be connected to a Facebook Page you manage</li>
-                            <li>Your Facebook app must have Business Management permission</li>
-                            <li>The app must be approved for all requested permissions</li>
-                            <li>You must be an admin of the Facebook Page</li>
-                        </ol>
-                    </div>
-                    <a href="/">Return to home and try again</a>
-                </body>
-            </html>
-        `);
-    }
-});
-
-// Dashboard route
-app.get('/dashboard', (req, res) => {
-    if (!req.session.userId) {
-        return res.redirect('/');
-    }
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// API Routes
-
-// Get user info
-app.get('/api/user', (req, res) => {
-    if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-    }
-    
-    const user = users.get(req.session.userId);
-    if (!user) {
-        return res.status(404).json({ error: 'User not found' });
-    }
-    
-    res.json({
-        username: user.username,
-        profilePicture: user.profilePicture,
-        pageName: user.pageName,
-        followersCount: user.followersCount,
-        igBusinessAccountId: user.igBusinessAccountId,
-        connectedAt: user.connectedAt
+    const shortLivedToken = tokenRes.data.access_token;
+    // 2) Exchange for long-lived token
+    const longTokenRes = await axios.get('https://graph.facebook.com/v17.0/oauth/access_token', {
+      params: {
+        grant_type: 'fb_exchange_token',
+        client_id: APP_ID,
+        client_secret: APP_SECRET,
+        fb_exchange_token: shortLivedToken
+      }
     });
-});
 
-// Get user's Instagram posts via Business API
-app.get('/api/posts', async (req, res) => {
-    if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-    }
-    
-    const user = users.get(req.session.userId);
-    if (!user || !user.igBusinessAccountId || !user.pageAccessToken) {
-        return res.status(401).json({ error: 'User not properly connected' });
-    }
-    
-    try {
-        // Get user's media from Instagram Business API
-        const mediaResponse = await axios.get(`https://graph.facebook.com/v19.0/${user.igBusinessAccountId}/media`, {
-            params: {
-                fields: 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,comments_count,like_count',
-                access_token: user.pageAccessToken,
-                limit: 20
-            }
-        });
-        
-        const userPosts = posts.get(req.session.userId) || new Map();
-        
-        // Enhance posts with hotword data
-        const postsWithHotwords = mediaResponse.data.data.map(post => {
-            const postHotwords = userPosts.get(post.id) || [];
-            return {
-                ...post,
-                hotwords: postHotwords,
-                media_display_url: post.media_url || post.thumbnail_url
-            };
-        });
-        
-        res.json({ 
-            success: true, 
-            posts: postsWithHotwords 
-        });
-        
-    } catch (error) {
-        console.error('Error fetching posts via Business API:', error.response?.data || error.message);
-        res.status(500).json({ 
-            error: 'Failed to fetch posts',
-            details: error.response?.data?.error?.message || error.message 
-        });
-    }
-});
+    const longLivedToken = longTokenRes.data.access_token;
 
-// Add hotword to post
-app.post('/api/posts/:postId/hotwords', (req, res) => {
-    if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
+    // 3) Get user's pages (so we can get a page access token and connected IG account)
+    const pagesRes = await axios.get('https://graph.facebook.com/v17.0/me/accounts', {
+      params: { access_token: longLivedToken }
+    });
+
+    // For prototype: pick the first page (in real product user picks which page to connect)
+    const pages = pagesRes.data.data || [];
+    if (!pages.length) {
+      return res.send('No Facebook Pages found on this account. Please ensure you have a Page and have admin role.');
     }
-    
-    const { postId } = req.params;
-    const { word, dmMessage } = req.body;
-    
-    if (!word || !dmMessage) {
-        return res.status(400).json({ error: 'Word and DM message are required' });
+    const page = pages[0]; // { id, name, access_token, ... }
+    const pageAccessToken = page.access_token;
+
+    // 4) Using page access token, fetch connected instagram_business_account info (if page is linked)
+    // endpoint: /{page-id}?fields=instagram_business_account
+    const pageInfoRes = await axios.get(`https://graph.facebook.com/v17.0/${page.id}`, {
+      params: {
+        fields: 'instagram_business_account',
+        access_token: pageAccessToken
+      }
+    });
+
+    const instagramBusiness = pageInfoRes.data.instagram_business_account;
+    if (!instagramBusiness || !instagramBusiness.id) {
+      return res.send('The selected Facebook Page is not linked to an Instagram Business/Creator account. Please link the accounts first in Facebook Page settings.');
     }
-    
-    const userId = req.session.userId;
-    const userHotwords = hotwords.get(userId) || new Map();
-    const userPosts = posts.get(userId) || new Map();
-    
-    // Add to hotwords map
-    if (!userHotwords.has(postId)) {
-        userHotwords.set(postId, []);
-    }
-    
-    const hotwordConfig = {
-        id: generateRandomId(),
-        word: word.toLowerCase().trim(),
-        dmMessage: dmMessage,
-        postId: postId,
-        createdAt: new Date().toISOString()
+
+    const igUserId = instagramBusiness.id;
+
+    // Save a prototype user session
+    const appUserId = Math.random().toString(36).slice(2);
+    users[appUserId] = {
+      appUserId,
+      ig_user_id: igUserId,
+      page_id: page.id,
+      page_access_token: pageAccessToken,
+      short_lived_token: shortLivedToken,
+      long_lived_token: longLivedToken,
+      configs: {}, // postId -> [ {hotword, reply} ]
+      logs: []
     };
-    
-    userHotwords.get(postId).push(hotwordConfig);
-    
-    // Also store in posts map for easy lookup
-    if (!userPosts.has(postId)) {
-        userPosts.set(postId, []);
-    }
-    userPosts.get(postId).push(hotwordConfig);
-    
-    hotwords.set(userId, userHotwords);
-    posts.set(userId, userPosts);
-    
-    logAction(userId, 'HOTWORD_ADDED', { postId, word: hotwordConfig.word });
-    
-    res.json({ success: true, hotword: hotwordConfig });
+
+    // set cookie to keep session
+    res.cookie('appUserId', appUserId, { httpOnly: true });
+    res.redirect('/'); // back to UI
+  } catch (err) {
+    console.error('OAuth callback error', err.response ? err.response.data : err.message);
+    res.status(500).send('OAuth callback error: ' + (err.message || 'unknown'));
+  }
 });
 
-// Remove hotword from post
-app.delete('/api/posts/:postId/hotwords/:hotwordId', (req, res) => {
-    if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-    }
-    
-    const { postId, hotwordId } = req.params;
-    const userId = req.session.userId;
-    
-    const userHotwords = hotwords.get(userId);
-    const userPosts = posts.get(userId);
-    
-    let removed = false;
-    
-    if (userHotwords && userHotwords.has(postId)) {
-        const postHotwords = userHotwords.get(postId).filter(hw => hw.id !== hotwordId);
-        userHotwords.set(postId, postHotwords);
-        removed = true;
-    }
-    
-    if (userPosts && userPosts.has(postId)) {
-        const postConfigs = userPosts.get(postId).filter(hw => hw.id !== hotwordId);
-        userPosts.set(postId, postConfigs);
-    }
-    
-    if (removed) {
-        logAction(userId, 'HOTWORD_REMOVED', { postId, hotwordId });
-    }
-    
-    res.json({ success: true, removed });
+/* ====== API: list posts for connected IG account ======
+   GET /api/posts
+   returns posts for the logged-in user (from ig_user_id via Graph API)
+*/
+app.get('/api/posts', async (req, res) => {
+  try {
+    const appUserId = req.cookies.appUserId;
+    if (!appUserId || !users[appUserId]) return res.status(401).json({ error: 'Not connected' });
+
+    const u = users[appUserId];
+    // Get media for the IG user
+    const mediaRes = await axios.get(`https://graph.facebook.com/v17.0/${u.ig_user_id}/media`, {
+      params: {
+        fields: 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp',
+        access_token: u.page_access_token
+      }
+    });
+
+    res.json({ data: mediaRes.data.data || [] });
+  } catch (err) {
+    console.error('posts error', err.response ? err.response.data : err.message);
+    res.status(500).json({ error: 'Failed to fetch posts', details: err.message });
+  }
 });
 
-// Get DM logs
-app.get('/api/logs', (req, res) => {
-    if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-    }
-    
-    const userLogs = dmLogs.get(req.session.userId) || [];
-    res.json({ success: true, logs: userLogs.slice(0, 50) });
+/* ====== API: manage configs (hotwords + reply messages) ====== */
+app.get('/api/config', (req, res) => {
+  const appUserId = req.cookies.appUserId;
+  if (!appUserId || !users[appUserId]) return res.status(401).json({ error: 'Not connected' });
+  res.json({ configs: users[appUserId].configs, logs: users[appUserId].logs });
 });
 
-// Test DM endpoint
-app.post('/api/test-dm', async (req, res) => {
-    if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-    }
-    
-    const user = users.get(req.session.userId);
-    if (!user || !user.igBusinessAccountId || !user.pageAccessToken) {
-        return res.status(400).json({ error: 'User not properly connected' });
-    }
-    
-    try {
-        // Create a test comment ID
-        const testCommentId = `test_comment_${generateRandomId()}`;
-        
-        // Send test DM
-        const dmResponse = await axios.post(`https://graph.facebook.com/v19.0/${user.igBusinessAccountId}/messages`, {
-            recipient: `{"comment_id":"${testCommentId}"}`,
-            message: `{"text":"Test DM from automation system"}`
-        }, {
-            params: {
-                access_token: user.pageAccessToken
+app.post('/api/config', (req, res) => {
+  const appUserId = req.cookies.appUserId;
+  if (!appUserId || !users[appUserId]) return res.status(401).json({ error: 'Not connected' });
+  const { postId, hotword, reply } = req.body;
+  if (!postId || !hotword || !reply) return res.status(400).json({ error: 'postId, hotword, reply required' });
+
+  if (!users[appUserId].configs[postId]) users[appUserId].configs[postId] = [];
+  users[appUserId].configs[postId].push({ hotword: hotword.toLowerCase(), reply });
+  res.json({ ok: true, configs: users[appUserId].configs });
+});
+
+/* ====== Webhook: verification & receive events ======
+   Register this URL in your Facebook Developer app as a webhook callback.
+   On verification, Facebook calls with GET containing hub.mode/hub.challenge/hub.verify_token.
+   For POSTs: IG comment events will arrive here (subscribe to instagram comment changes).
+*/
+app.get('/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('Webhook verified');
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
+  }
+});
+
+app.post('/webhook', async (req, res) => {
+  // Facebook/Instagram will POST events here.
+  // We must parse entries, find comment creation events, and handle them.
+  try {
+    const body = req.body;
+    // quickly ACK (FB expects 200)
+    res.status(200).send('EVENT_RECEIVED');
+
+    // Example payload shapes vary — inspect console in dev
+    // We will attempt to extract comment events under body.entry[*].changes[*]
+    if (!body.entry) return;
+
+    for (const entry of body.entry) {
+      const changes = entry.changes || [];
+      for (const change of changes) {
+        // change.field might be 'comments' or 'mentions' etc
+        // Example change.value may include: { media_id, comment_id, text, from { id, username } }
+        const value = change.value || {};
+        if (!value || !value.comment_id) continue;
+
+        // commenter info
+        const commenterId = (value.from && value.from.id) || null;
+        const commenterUsername = (value.from && value.from.username) || null;
+        const commentText = (value.text || '').toLowerCase();
+        const mediaId = value.media_id || value.post_id || null;
+
+        // Find which app user this event is for by matching the IG owner id (entry.id)
+        // entry.id is usually the IG user id (owner)
+        const igOwnerId = entry.id;
+        const appUser = Object.values(users).find(u => u.ig_user_id === igOwnerId);
+        if (!appUser) {
+          console.warn('No app user found for ig id', igOwnerId);
+          continue;
+        }
+
+        // Check configs for this post
+        const postConfigs = appUser.configs[mediaId] || [];
+        for (const c of postConfigs) {
+          if (commentText.includes(c.hotword.toLowerCase())) {
+            // send DM reply to commenter
+            // Instagram Messaging endpoint (via page token): POST /{ig-user-id}/messages
+            // Request body: { recipient: { user_id: <instagram_user_id> }, message: { text: "..." } }
+            // Some endpoints expect recipient:{instagram_actor_id} or using thread id — check current meta docs.
+            try {
+              // Attempt send message
+              const sendRes = await axios.post(`https://graph.facebook.com/v17.0/${appUser.ig_user_id}/messages`, {
+                recipient: { id: commenterId },
+                message: { text: c.reply }
+              }, {
+                params: { access_token: appUser.page_access_token }
+              });
+
+              // Log success
+              appUser.logs.push({
+                when: new Date().toISOString(),
+                postId: mediaId,
+                commenter_id: commenterId,
+                commenter_username: commenterUsername,
+                comment_text: commentText,
+                reply_sent: c.reply,
+                meta: sendRes.data
+              });
+              console.log('DM sent to', commenterUsername || commenterId);
+            } catch (sendErr) {
+              console.error('Failed sending DM', sendErr.response ? sendErr.response.data : sendErr.message);
             }
-        });
-        
-        res.json({ 
-            success: true, 
-            message: 'Test DM functionality verified',
-            messageId: dmResponse.data.message_id 
-        });
-        
-    } catch (error) {
-        console.error('Test DM error:', error.response?.data || error.message);
-        res.status(500).json({ 
-            error: 'Failed to send test DM',
-            details: error.response?.data?.error || error.message 
-        });
+          }
+        }
+      }
     }
+  } catch (err) {
+    console.error('Webhook processing error', err);
+  }
 });
 
-// Logout
-app.post('/auth/logout', (req, res) => {
-    if (req.session.userId) {
-        logAction(req.session.userId, 'USER_LOGGED_OUT');
-    }
-    req.session.destroy();
-    res.json({ success: true });
+/* ====== Lightweight API to fetch logs for front-end ====== */
+app.get('/api/logs', (req, res) => {
+  const appUserId = req.cookies.appUserId;
+  if (!appUserId || !users[appUserId]) return res.status(401).json({ error: 'Not connected' });
+  res.json({ logs: users[appUserId].logs || [] });
 });
 
-// Start server
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Instagram Business DM Automation Platform running on port ${PORT}`);
-    console.log(`📱 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🔗 Redirect URI: ${FACEBOOK_CONFIG.redirectUri}`);
-    console.log(`🔑 Using Facebook Login for Instagram Business API`);
-    console.log(`👥 Monitoring comments for Instagram Business automation...`);
-    
-    // Start comment monitoring
-    startCommentMonitoring();
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Visit http://localhost:${PORT}/auth/instagram to start connect flow`);
 });

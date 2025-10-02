@@ -19,10 +19,10 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // --- CONFIG (use real env vars in production) ---
-const APP_ID = process.env.APP_ID || 'YOUR_APP_ID';
-const APP_SECRET = process.env.APP_SECRET || 'YOUR_APP_SECRET';
-const REDIRECT_URI = process.env.REDIRECT_URI || `http://localhost:${PORT}/auth/callback`;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'verify_token_example';
+const APP_ID = process.env.APP_ID || '1256408305896903';
+const APP_SECRET = process.env.APP_SECRET || 'fc7fbca3fbecd5bc6b06331bc4da17c9';
+const REDIRECT_URI = process.env.REDIRECT_URI || `https://instagram-automation-render.onrender.com//auth/callback`;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'Work-Flow';
 
 // --- Simple in-memory store (replace with DB) ---
 /*

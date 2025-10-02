@@ -10,7 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 const APP_ID = process.env.APP_ID || "1256408305896903"; // Your Meta App ID
-const APP_SECRET = process.env.APP_SECRET;
+const APP_SECRET = process.env.APP_SECRET || "fc7fbca3fbecd5bc6b06331bc4da17c9";
 const REDIRECT_URI = process.env.REDIRECT_URI || `https://instagram-automation-render.onrender.com/auth/callback`;
 
 app.use(bodyParser.json());

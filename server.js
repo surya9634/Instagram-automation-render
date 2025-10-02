@@ -3,7 +3,6 @@ const session = require('express-session');
 const axios = require('axios');
 const path = require('path');
 const crypto = require('crypto');
-const qs = require('querystring');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -36,12 +35,13 @@ const posts = new Map();
 const hotwords = new Map();
 const dmLogs = new Map();
 
-// Instagram Business API Configuration
-const INSTAGRAM_CONFIG = {
-    clientId: process.env.INSTAGRAM_CLIENT_ID || '1477959410285896',
-    clientSecret: process.env.INSTAGRAM_CLIENT_SECRET,
+// Facebook App Configuration for Instagram Business API
+const FACEBOOK_CONFIG = {
+    clientId: process.env.FACEBOOK_CLIENT_ID || '1477959410285896',
+    clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
     redirectUri: process.env.REDIRECT_URI || 'https://instagram-automation-render.onrender.com/auth/callback',
-    scope: 'instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights'
+    // Facebook permissions needed for Instagram Business API
+    scope: 'business_management,instagram_basic,instagram_manage_messages,instagram_manage_comments,pages_show_list,pages_read_engagement'
 };
 
 // Utility functions
@@ -76,34 +76,20 @@ async function checkUserComments(userId, userData) {
     const userPosts = posts.get(userId) || new Map();
     const userHotwords = hotwords.get(userId) || new Map();
     
-    if (userPosts.size === 0) return;
+    if (userPosts.size === 0 || !userData.igBusinessAccountId || !userData.pageAccessToken) return;
 
     try {
-        // Get user's Instagram Business Account ID
-        const accountsResponse = await axios.get(`https://graph.facebook.com/v19.0/me/accounts`, {
-            params: {
-                access_token: userData.accessToken,
-                fields: 'access_token,instagram_business_account{id,username}'
-            }
-        });
-
-        const pageWithInstagram = accountsResponse.data.data.find(page => page.instagram_business_account);
-        if (!pageWithInstagram) return;
-
-        const pageAccessToken = pageWithInstagram.access_token;
-        const igBusinessAccountId = pageWithInstagram.instagram_business_account.id;
-
         // Get user's media from Instagram Business Account
-        const mediaResponse = await axios.get(`https://graph.facebook.com/v19.0/${igBusinessAccountId}/media`, {
+        const mediaResponse = await axios.get(`https://graph.facebook.com/v19.0/${userData.igBusinessAccountId}/media`, {
             params: {
-                fields: 'id,caption,media_type,media_url,permalink,timestamp,comments_count,like_count',
-                access_token: pageAccessToken,
+                fields: 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,comments_count,like_count',
+                access_token: userData.pageAccessToken,
                 limit: 20
             }
         });
 
         for (const post of mediaResponse.data.data) {
-            await processPostComments(userId, userData, post, userHotwords, pageAccessToken);
+            await processPostComments(userId, userData, post, userHotwords);
         }
     } catch (error) {
         console.error(`Error fetching media for user ${userId}:`, error.response?.data || error.message);
@@ -111,7 +97,7 @@ async function checkUserComments(userId, userData) {
 }
 
 // Process comments for a specific post
-async function processPostComments(userId, userData, post, userHotwords, pageAccessToken) {
+async function processPostComments(userId, userData, post, userHotwords) {
     const postHotwords = userHotwords.get(post.id) || [];
     if (postHotwords.length === 0) return;
 
@@ -120,12 +106,12 @@ async function processPostComments(userId, userData, post, userHotwords, pageAcc
         const commentsResponse = await axios.get(`https://graph.facebook.com/v19.0/${post.id}/comments`, {
             params: {
                 fields: 'id,text,username,from',
-                access_token: pageAccessToken
+                access_token: userData.pageAccessToken
             }
         });
 
         for (const comment of commentsResponse.data.data) {
-            await processComment(userId, userData, post, comment, postHotwords, pageAccessToken);
+            await processComment(userId, userData, post, comment, postHotwords);
         }
     } catch (error) {
         console.error(`Error fetching comments for post ${post.id}:`, error.response?.data || error.message);
@@ -133,7 +119,7 @@ async function processPostComments(userId, userData, post, userHotwords, pageAcc
 }
 
 // Process individual comment
-async function processComment(userId, userData, post, comment, postHotwords, pageAccessToken) {
+async function processComment(userId, userData, post, comment, postHotwords) {
     const commentText = comment.text.toLowerCase();
     const commentId = comment.id;
     
@@ -148,35 +134,22 @@ async function processComment(userId, userData, post, comment, postHotwords, pag
     // Check for matching hotwords
     for (const hotwordConfig of postHotwords) {
         if (commentText.includes(hotwordConfig.word.toLowerCase())) {
-            await sendAutomatedDM(userId, userData, comment, post, hotwordConfig, pageAccessToken);
+            await sendAutomatedDM(userId, userData, comment, post, hotwordConfig);
             break;
         }
     }
 }
 
 // Send automated DM using Instagram Business API
-async function sendAutomatedDM(userId, userData, comment, post, hotwordConfig, pageAccessToken) {
+async function sendAutomatedDM(userId, userData, comment, post, hotwordConfig) {
     try {
-        // Get Instagram Business Account ID
-        const accountsResponse = await axios.get(`https://graph.facebook.com/v19.0/me/accounts`, {
-            params: {
-                access_token: userData.accessToken,
-                fields: 'instagram_business_account{id}'
-            }
-        });
-
-        const pageWithInstagram = accountsResponse.data.data.find(page => page.instagram_business_account);
-        if (!pageWithInstagram) return;
-
-        const igBusinessAccountId = pageWithInstagram.instagram_business_account.id;
-
         // Send DM using Instagram Business API
-        const dmResponse = await axios.post(`https://graph.facebook.com/v19.0/${igBusinessAccountId}/messages`, {
+        const dmResponse = await axios.post(`https://graph.facebook.com/v19.0/${userData.igBusinessAccountId}/messages`, {
             recipient: `{"comment_id":"${comment.id}"}`,
             message: `{"text":"${hotwordConfig.dmMessage}"}`
         }, {
             params: {
-                access_token: pageAccessToken
+                access_token: userData.pageAccessToken
             }
         });
 
@@ -250,45 +223,53 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Instagram Business OAuth - Start authentication
-app.get('/auth/instagram', (req, res) => {
-    // Validate Instagram config
-    if (!INSTAGRAM_CONFIG.clientId || !INSTAGRAM_CONFIG.clientSecret) {
+// Facebook OAuth for Instagram Business API
+app.get('/auth/facebook', (req, res) => {
+    // Validate Facebook config
+    if (!FACEBOOK_CONFIG.clientId || !FACEBOOK_CONFIG.clientSecret) {
         return res.status(500).send(`
             <html>
                 <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
                     <h2>Configuration Error</h2>
-                    <p>Instagram OAuth is not properly configured.</p>
-                    <p>Please set INSTAGRAM_CLIENT_ID and INSTAGRAM_CLIENT_SECRET environment variables.</p>
+                    <p>Facebook OAuth is not properly configured.</p>
+                    <p>Please set FACEBOOK_CLIENT_ID and FACEBOOK_CLIENT_SECRET environment variables.</p>
                     <a href="/">Return to home</a>
                 </body>
             </html>
         `);
     }
 
-    // Use the EXACT URL from your Facebook Developer configuration
-    const authUrl = `https://www.instagram.com/oauth/authorize?` +
-        `force_reauth=true` +
-        `&client_id=${INSTAGRAM_CONFIG.clientId}` +
-        `&redirect_uri=${encodeURIComponent(INSTAGRAM_CONFIG.redirectUri)}` +
+    const state = generateRandomId();
+    req.session.oauthState = state;
+    
+    // Facebook OAuth URL for Instagram Business API
+    const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?` +
+        `client_id=${FACEBOOK_CONFIG.clientId}` +
+        `&redirect_uri=${encodeURIComponent(FACEBOOK_CONFIG.redirectUri)}` +
+        `&scope=${encodeURIComponent(FACEBOOK_CONFIG.scope)}` +
         `&response_type=code` +
-        `&scope=${encodeURIComponent(INSTAGRAM_CONFIG.scope)}`;
+        `&state=${state}`;
     
-    console.log('🔐 OAuth Initiated with exact Business URL');
+    console.log('🔐 Facebook OAuth Initiated for Instagram Business API');
     
-    // Redirect directly - no state parameter to avoid issues
-    res.redirect(authUrl);
+    req.session.save((err) => {
+        if (err) {
+            console.error('Session save error:', err);
+            return res.status(500).send('Session error');
+        }
+        res.redirect(authUrl);
+    });
 });
 
-// Instagram Business OAuth - Callback
+// Facebook OAuth Callback
 app.get('/auth/callback', async (req, res) => {
-    const { code, error, error_reason, error_description } = req.query;
+    const { code, state, error, error_reason, error_description } = req.query;
     
-    console.log('🔐 OAuth Callback Received:', {
+    console.log('🔐 Facebook OAuth Callback Received:', {
         code: code ? 'present' : 'missing',
-        error: error,
-        error_reason: error_reason,
-        error_description: error_description
+        state: state,
+        sessionState: req.session.oauthState,
+        error: error
     });
     
     if (error) {
@@ -305,94 +286,100 @@ app.get('/auth/callback', async (req, res) => {
         `);
     }
     
-    if (!code) {
-        return res.status(400).send(`
-            <html>
-                <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-                    <h2>Authorization Failed</h2>
-                    <p>No authorization code received.</p>
-                    <a href="/">Return to home</a>
-                </body>
-            </html>
-        `);
+    // State validation
+    if (!state || !req.session.oauthState || state !== req.session.oauthState) {
+        console.error('State validation failed');
+        return res.status(400).send('Invalid state parameter');
     }
     
+    req.session.oauthState = null;
+    
     try {
-        console.log('🔄 Exchanging code for access token...');
+        console.log('🔄 Exchanging code for Facebook access token...');
         
-        // Step 1: Exchange code for short-lived access token
-        const tokenResponse = await axios.post('https://api.instagram.com/oauth/access_token', 
-            qs.stringify({
-                client_id: INSTAGRAM_CONFIG.clientId,
-                client_secret: INSTAGRAM_CONFIG.clientSecret,
-                grant_type: 'authorization_code',
-                redirect_uri: INSTAGRAM_CONFIG.redirectUri,
-                code: code
-            }), {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            }
-        );
-        
-        const { access_token, user_id } = tokenResponse.data;
-        console.log('✅ Instagram access token received for user:', user_id);
-        
-        // Step 2: Exchange short-lived token for long-lived token (60 days)
-        const longLivedTokenResponse = await axios.get(`https://graph.instagram.com/access_token`, {
+        // Step 1: Exchange code for Facebook access token
+        const tokenResponse = await axios.get(`https://graph.facebook.com/v19.0/oauth/access_token`, {
             params: {
-                grant_type: 'ig_exchange_token',
-                client_secret: INSTAGRAM_CONFIG.clientSecret,
-                access_token: access_token
+                client_id: FACEBOOK_CONFIG.clientId,
+                client_secret: FACEBOOK_CONFIG.clientSecret,
+                redirect_uri: FACEBOOK_CONFIG.redirectUri,
+                code: code
             }
         });
         
-        const longLivedToken = longLivedTokenResponse.data.access_token;
-        console.log('✅ Long-lived access token received');
+        const { access_token } = tokenResponse.data;
+        console.log('✅ Facebook access token received');
         
-        // Step 3: Get Facebook Page access token with Instagram Business Account
+        // Step 2: Get long-lived token (60 days)
+        const longLivedResponse = await axios.get(`https://graph.facebook.com/v19.0/oauth/access_token`, {
+            params: {
+                grant_type: 'fb_exchange_token',
+                client_id: FACEBOOK_CONFIG.clientId,
+                client_secret: FACEBOOK_CONFIG.clientSecret,
+                fb_exchange_token: access_token
+            }
+        });
+        
+        const longLivedToken = longLivedResponse.data.access_token;
+        console.log('✅ Long-lived Facebook access token received');
+        
+        // Step 3: Get user's Facebook pages
         const pagesResponse = await axios.get(`https://graph.facebook.com/v19.0/me/accounts`, {
             params: {
                 access_token: longLivedToken,
-                fields: 'id,name,access_token,instagram_business_account{id,username,profile_picture_url}'
+                fields: 'id,name,access_token,instagram_business_account{id,username,profile_picture_url,followers_count}'
             }
         });
 
-        const pageWithInstagram = pagesResponse.data.data.find(page => page.instagram_business_account);
+        // Find pages with Instagram Business accounts
+        const pagesWithInstagram = pagesResponse.data.data.filter(page => page.instagram_business_account);
         
-        if (!pageWithInstagram) {
+        if (pagesWithInstagram.length === 0) {
             return res.status(400).send(`
                 <html>
                     <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
                         <h2>No Instagram Business Account Found</h2>
-                        <p>Please make sure your Instagram account is connected to a Facebook Page as a Business account.</p>
+                        <p>Please make sure:</p>
+                        <ol style="text-align: left; display: inline-block;">
+                            <li>Your Instagram account is a Business account</li>
+                            <li>It's connected to a Facebook Page you manage</li>
+                            <li>You have the required permissions</li>
+                        </ol>
                         <a href="/">Return to home</a>
                     </body>
                 </html>
             `);
         }
 
+        // For now, use the first Instagram Business account found
+        const page = pagesWithInstagram[0];
+        const igBusinessAccount = page.instagram_business_account;
+
         const userData = {
-            id: user_id,
-            username: pageWithInstagram.instagram_business_account.username,
-            accessToken: pageWithInstagram.access_token, // Page access token for Business API
-            pageId: pageWithInstagram.id,
-            igBusinessAccountId: pageWithInstagram.instagram_business_account.id,
-            profilePicture: pageWithInstagram.instagram_business_account.profile_picture_url,
+            id: generateRandomId(), // Generate our own user ID since we're using Facebook login
+            username: igBusinessAccount.username,
+            accessToken: longLivedToken, // Long-lived Facebook token
+            pageAccessToken: page.access_token, // Page access token for Instagram Business API
+            pageId: page.id,
+            pageName: page.name,
+            igBusinessAccountId: igBusinessAccount.id,
+            profilePicture: igBusinessAccount.profile_picture_url,
+            followersCount: igBusinessAccount.followers_count,
             connectedAt: new Date().toISOString()
         };
         
         // Store user data
-        users.set(user_id, userData);
-        req.session.userId = user_id;
+        const userId = userData.id;
+        users.set(userId, userData);
+        req.session.userId = userId;
         req.session.username = userData.username;
         
         // Initialize user data structures
-        if (!posts.has(user_id)) posts.set(user_id, new Map());
-        if (!hotwords.has(user_id)) hotwords.set(user_id, new Map());
-        if (!dmLogs.has(user_id)) dmLogs.set(user_id, []);
+        if (!posts.has(userId)) posts.set(userId, new Map());
+        if (!hotwords.has(userId)) hotwords.set(userId, new Map());
+        if (!dmLogs.has(userId)) dmLogs.set(userId, []);
         
-        console.log('✅ User successfully connected:', userData.username);
+        console.log('✅ Instagram Business account connected:', userData.username);
         
         res.redirect('/dashboard');
         
@@ -404,9 +391,7 @@ app.get('/auth/callback', async (req, res) => {
         });
         
         let errorMessage = 'Authentication failed';
-        if (error.response?.data?.error_message) {
-            errorMessage = error.response.data.error_message;
-        } else if (error.response?.data?.error?.message) {
+        if (error.response?.data?.error?.message) {
             errorMessage = error.response.data.error.message;
         } else {
             errorMessage = error.message;
@@ -420,10 +405,11 @@ app.get('/auth/callback', async (req, res) => {
                     <div style="text-align: left; max-width: 500px; margin: 20px auto; background: #f8f9fa; padding: 20px; border-radius: 8px;">
                         <h3>Required Setup:</h3>
                         <ol>
-                            <li>Your Instagram account must be a Business or Creator account</li>
-                            <li>It must be connected to a Facebook Page</li>
+                            <li>Your Instagram account must be a Business account</li>
+                            <li>It must be connected to a Facebook Page you manage</li>
                             <li>Your Facebook app must have Business Management permission</li>
                             <li>The app must be approved for all requested permissions</li>
+                            <li>You must be an admin of the Facebook Page</li>
                         </ol>
                     </div>
                     <a href="/">Return to home and try again</a>
@@ -457,6 +443,8 @@ app.get('/api/user', (req, res) => {
     res.json({
         username: user.username,
         profilePicture: user.profilePicture,
+        pageName: user.pageName,
+        followersCount: user.followersCount,
         igBusinessAccountId: user.igBusinessAccountId,
         connectedAt: user.connectedAt
     });
@@ -469,8 +457,8 @@ app.get('/api/posts', async (req, res) => {
     }
     
     const user = users.get(req.session.userId);
-    if (!user) {
-        return res.status(401).json({ error: 'User not found' });
+    if (!user || !user.igBusinessAccountId || !user.pageAccessToken) {
+        return res.status(401).json({ error: 'User not properly connected' });
     }
     
     try {
@@ -478,7 +466,7 @@ app.get('/api/posts', async (req, res) => {
         const mediaResponse = await axios.get(`https://graph.facebook.com/v19.0/${user.igBusinessAccountId}/media`, {
             params: {
                 fields: 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,comments_count,like_count',
-                access_token: user.accessToken,
+                access_token: user.pageAccessToken,
                 limit: 20
             }
         });
@@ -597,30 +585,34 @@ app.get('/api/logs', (req, res) => {
     res.json({ success: true, logs: userLogs.slice(0, 50) });
 });
 
-// Test endpoint to check if DM sending works
+// Test DM endpoint
 app.post('/api/test-dm', async (req, res) => {
     if (!req.session.userId) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
     
-    const { postId, commentId, recipientId, message } = req.body;
+    const user = users.get(req.session.userId);
+    if (!user || !user.igBusinessAccountId || !user.pageAccessToken) {
+        return res.status(400).json({ error: 'User not properly connected' });
+    }
     
     try {
-        const user = users.get(req.session.userId);
+        // Create a test comment ID
+        const testCommentId = `test_comment_${generateRandomId()}`;
         
         // Send test DM
         const dmResponse = await axios.post(`https://graph.facebook.com/v19.0/${user.igBusinessAccountId}/messages`, {
-            recipient: `{"id":"${recipientId}"}`,
-            message: `{"text":"${message}"}`
+            recipient: `{"comment_id":"${testCommentId}"}`,
+            message: `{"text":"Test DM from automation system"}`
         }, {
             params: {
-                access_token: user.accessToken
+                access_token: user.pageAccessToken
             }
         });
         
         res.json({ 
             success: true, 
-            message: 'Test DM sent successfully',
+            message: 'Test DM functionality verified',
             messageId: dmResponse.data.message_id 
         });
         
@@ -646,8 +638,8 @@ app.post('/auth/logout', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Instagram Business DM Automation Platform running on port ${PORT}`);
     console.log(`📱 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🔗 Redirect URI: ${INSTAGRAM_CONFIG.redirectUri}`);
-    console.log(`🔑 Client ID: ${INSTAGRAM_CONFIG.clientId}`);
+    console.log(`🔗 Redirect URI: ${FACEBOOK_CONFIG.redirectUri}`);
+    console.log(`🔑 Using Facebook Login for Instagram Business API`);
     console.log(`👥 Monitoring comments for Instagram Business automation...`);
     
     // Start comment monitoring

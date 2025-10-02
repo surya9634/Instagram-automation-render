@@ -1,1075 +1,133 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instagram Business DM Automation</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: #333;
-            line-height: 1.6;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            color: white;
-        }
-
-        .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .header p {
-            font-size: 1.1rem;
-            opacity: 0.9;
-        }
-
-        .card {
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            margin-bottom: 20px;
-            transition: transform 0.2s;
-        }
-
-        .card:hover {
-            transform: translateY(-2px);
-        }
-
-        .btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: all 0.3s;
-            text-decoration: none;
-            display: inline-block;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
-
-        .btn-facebook {
-            background: linear-gradient(135deg, #1877f2 0%, #3b5998 100%);
-        }
-
-        .btn-secondary {
-            background: #6c757d;
-        }
-
-        .btn-danger {
-            background: #dc3545;
-        }
-
-        .btn-success {
-            background: #28a745;
-        }
-
-        .btn-warning {
-            background: #ffc107;
-            color: #212529;
-        }
-
-        .auth-section {
-            text-align: center;
-            max-width: 500px;
-            margin: 100px auto;
-        }
-
-        .dashboard {
-            display: none;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        @media (max-width: 768px) {
-            .grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .post-card {
-            border: 1px solid #e0e0e0;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 20px;
-            background: #f8f9fa;
-        }
-
-        .post-media {
-            width: 100%;
-            height: 200px;
-            background: #e9ecef;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 15px;
-            overflow: hidden;
-        }
-
-        .post-media img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        .hotword-item {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-left: 4px solid #667eea;
-        }
-
-        .log-item {
-            border-left: 4px solid #28a745;
-            padding: 15px;
-            margin-bottom: 10px;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }
-
-        .log-item.failed {
-            border-left-color: #dc3545;
-            background: #f8d7da;
-        }
-
-        .log-item.simulated {
-            border-left-color: #ffc107;
-            background: #fff3cd;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #495057;
-        }
-
-        .form-control {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e9ecef;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s;
-        }
-
-        .form-control:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #6c757d;
-        }
-
-        .alert {
-            padding: 15px 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            border-left: 4px solid;
-        }
-
-        .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border-color: #c3e6cb;
-        }
-
-        .alert-error {
-            background: #f8d7da;
-            color: #721c24;
-            border-color: #f5c6cb;
-        }
-
-        .alert-info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border-color: #bee5eb;
-        }
-
-        .alert-warning {
-            background: #fff3cd;
-            color: #856404;
-            border-color: #ffeaa7;
-        }
-
-        .tab-container {
-            margin-top: 20px;
-        }
-
-        .tabs {
-            display: flex;
-            border-bottom: 2px solid #e9ecef;
-            margin-bottom: 30px;
-            flex-wrap: wrap;
-        }
-
-        .tab {
-            padding: 15px 25px;
-            cursor: pointer;
-            border-bottom: 3px solid transparent;
-            font-weight: 500;
-            transition: all 0.3s;
-        }
-
-        .tab.active {
-            border-bottom-color: #667eea;
-            color: #667eea;
-        }
-
-        .tab:hover {
-            background: #f8f9fa;
-            border-radius: 8px 8px 0 0;
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            background: white;
-            padding: 25px;
-            border-radius: 10px;
-            text-align: center;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-
-        .stat-number {
-            font-size: 2.5rem;
-            font-weight: bold;
-            color: #667eea;
-            margin-bottom: 10px;
-        }
-
-        .stat-label {
-            color: #6c757d;
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .user-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-            flex-wrap: wrap;
-            gap: 15px;
-        }
-
-        .user-info {
-            color: white;
-        }
-
-        .user-info h2 {
-            margin-bottom: 5px;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #6c757d;
-        }
-
-        .empty-state i {
-            font-size: 4rem;
-            margin-bottom: 20px;
-            opacity: 0.5;
-        }
-
-        .status-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-
-        .status-connected {
-            background: #28a745;
-        }
-
-        .status-disconnected {
-            background: #dc3545;
-        }
-
-        .business-badge {
-            background: #1877f2;
-            color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 0.8rem;
-            margin-left: 8px;
-        }
-
-        .permissions-list {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-        }
-
-        .permissions-list ul {
-            text-align: left;
-            display: inline-block;
-        }
-
-        .permissions-list li {
-            margin-bottom: 8px;
-        }
-
-        .test-section {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            margin-top: 20px;
-        }
-    </style>
+  <meta charset="utf-8" />
+  <title>IG DM Auto (Prototype)</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 18px; max-width: 900px; margin: auto; }
+    .card { border: 1px solid #ddd; padding: 14px; border-radius: 8px; margin-bottom: 12px; }
+    button { padding: 8px 12px; cursor: pointer; }
+    input, textarea { width: 100%; padding: 8px; margin: 6px 0; box-sizing: border-box; }
+    .small { font-size: 0.9rem; color: #666 }
+    .post { display:flex; gap:10px; align-items:center; }
+    .post img { width:80px; height:80px; object-fit:cover; border-radius:6px; }
+    .hotword { background:#f2f2f2; padding:6px 8px; border-radius:6px; display:inline-block; margin:4px; }
+    .log { font-size:0.9rem; color: #333; border-top:1px dashed #ddd; padding-top:8px; margin-top:8px }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Authentication Section -->
-        <div id="authSection" class="auth-section card">
-            <h1 style="color: #667eea; margin-bottom: 20px;">🤖 Instagram Business DM Automation</h1>
-            <p style="margin-bottom: 30px; color: #666; font-size: 1.1rem;">
-                Automate your Instagram Business direct messages based on comment triggers. 
-                Connect via Facebook to access your Instagram Business account.
-            </p>
-            
-            <button class="btn btn-facebook" onclick="connectInstagram()" style="padding: 15px 30px; font-size: 1.1rem; margin-bottom: 20px;">
-                📱 Connect Instagram Business Account
-            </button>
-            
-            <div class="permissions-list">
-                <h3 style="color: #495057; margin-bottom: 15px;">Required Permissions:</h3>
-                <ul style="color: #666; line-height: 1.8;">
-                    <li>📊 Access to your Instagram Business account</li>
-                    <li>💬 Read comments on your posts</li>
-                    <li>📨 Send automated direct messages</li>
-                    <li>📱 View your Instagram media</li>
-                    <li>👥 Access to connected Facebook Page</li>
-                </ul>
-            </div>
+  <h2>Instagram DM Automation — Prototype</h2>
+  <div class="card">
+    <p class="small">Step 1. Connect your Instagram (opens Instagram / Facebook OAuth). Make sure you use a Professional Instagram (Business/Creator) and that the Page is linked.</p>
+    <button id="connectBtn">Connect Instagram</button>
+  </div>
 
-            <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
-                <h3 style="color: #495057; margin-bottom: 10px;">How it works:</h3>
-                <ol style="text-align: left; color: #666; line-height: 1.8;">
-                    <li>Connect your Instagram Business account via Facebook</li>
-                    <li>Select posts you want to monitor for comments</li>
-                    <li>Add trigger words (hotwords) for each post</li>
-                    <li>Set automated DM responses for each trigger</li>
-                    <li>We automatically send DMs when users comment your hotwords</li>
-                </ol>
-            </div>
-        </div>
+  <div class="card" id="postsCard" style="display:none;">
+    <h3>Your Posts</h3>
+    <div id="postsList">Loading...</div>
+  </div>
 
-        <!-- Dashboard Section -->
-        <div id="dashboard" class="dashboard">
-            <div class="user-header">
-                <div class="user-info">
-                    <h2>Welcome, <span id="username"></span>! <span class="business-badge">Business</span> 👋</h2>
-                    <p>Manage your Instagram Business DM automation below</p>
-                    <div id="userDetails" style="margin-top: 10px; font-size: 0.9rem; opacity: 0.8;"></div>
-                </div>
-                <button class="btn btn-secondary" onclick="logout()">
-                    🚪 Logout
-                </button>
-            </div>
-
-            <!-- Stats -->
-            <div class="stats">
-                <div class="stat-card">
-                    <div class="stat-number" id="statPosts">0</div>
-                    <div class="stat-label">Posts Monitored</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="statHotwords">0</div>
-                    <div class="stat-label">Active Triggers</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="statDms">0</div>
-                    <div class="stat-label">DMs Sent</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="statStatus">
-                        <span class="status-indicator status-connected"></span>
-                        Connected
-                    </div>
-                    <div class="stat-label">Account Status</div>
-                </div>
-            </div>
-
-            <div class="tab-container">
-                <div class="tabs">
-                    <div class="tab active" onclick="switchTab('posts')">📱 Posts & Triggers</div>
-                    <div class="tab" onclick="switchTab('logs')">📊 DM Logs</div>
-                    <div class="tab" onclick="switchTab('simulate')">🧪 Test Tools</div>
-                    <div class="tab" onclick="switchTab('api')">🔧 API Status</div>
-                </div>
-
-                <!-- Posts & Hotwords Tab -->
-                <div id="postsTab" class="tab-content active">
-                    <div class="card">
-                        <h3 style="margin-bottom: 20px;">Your Instagram Business Posts</h3>
-                        <p style="margin-bottom: 15px; color: #666;">
-                            Select posts to monitor and add trigger words that will automatically send DMs when commented.
-                        </p>
-                        <div id="postsList" class="loading">
-                            Loading your Instagram Business posts...
-                        </div>
-                    </div>
-                </div>
-
-                <!-- DM Logs Tab -->
-                <div id="logsTab" class="tab-content">
-                    <div class="card">
-                        <h3 style="margin-bottom: 20px;">DM Sent History</h3>
-                        <p style="margin-bottom: 15px; color: #666;">
-                            View all automated DMs sent by the system.
-                        </p>
-                        <div id="logsList" class="loading">
-                            Loading DM logs...
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Test Tools Tab -->
-                <div id="simulateTab" class="tab-content">
-                    <div class="card">
-                        <h3 style="margin-bottom: 20px;">Test Your Automation</h3>
-                        
-                        <div class="test-section">
-                            <h4 style="color: #495057; margin-bottom: 15px;">🧪 Simulate Comment</h4>
-                            <p style="margin-bottom: 15px; color: #666;">
-                                Test if your trigger words are working correctly by simulating a comment.
-                            </p>
-                            <div class="form-group">
-                                <label>Select Post:</label>
-                                <select id="testPostSelect" class="form-control">
-                                    <option value="">Loading posts...</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Comment Text:</label>
-                                <input type="text" id="testComment" class="form-control" 
-                                       placeholder="Enter a comment that should trigger a DM (e.g., 'I'm interested in this product')">
-                            </div>
-                            <button class="btn btn-warning" onclick="simulateComment()">
-                                🧪 Simulate Comment
-                            </button>
-                        </div>
-
-                        <div class="test-section">
-                            <h4 style="color: #495057; margin-bottom: 15px;">🔧 Test DM Functionality</h4>
-                            <p style="margin-bottom: 15px; color: #666;">
-                                Verify that the DM sending functionality is working properly.
-                            </p>
-                            <button class="btn btn-success" onclick="testDM()">
-                                📨 Test DM System
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- API Status Tab -->
-                <div id="apiTab" class="tab-content">
-                    <div class="card">
-                        <h3 style="margin-bottom: 20px;">API Status & Configuration</h3>
-                        
-                        <div class="alert alert-info">
-                            <strong>Instagram Business API</strong> - Connected via Facebook OAuth
-                        </div>
-
-                        <div class="form-group">
-                            <label>Instagram Business Account ID:</label>
-                            <input type="text" id="igAccountId" class="form-control" readonly>
-                        </div>
-
-                        <div class="form-group">
-                            <label>Connected Facebook Page:</label>
-                            <input type="text" id="facebookPage" class="form-control" readonly>
-                        </div>
-
-                        <div class="form-group">
-                            <label>Connection Status:</label>
-                            <input type="text" id="connectionStatus" class="form-control" value="Checking..." readonly>
-                        </div>
-
-                        <div style="display: flex; gap: 10px; margin-top: 20px;">
-                            <button class="btn" onclick="refreshConnection()">
-                                🔄 Refresh Status
-                            </button>
-                            <button class="btn btn-secondary" onclick="checkPermissions()">
-                                🔍 Check Permissions
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+  <div class="card" id="configCard" style="display:none;">
+    <h3>Add Hotword & Reply</h3>
+    <div>
+      <label>Post ID</label>
+      <input id="postIdInput" placeholder="Paste post id (from posts list)"/>
+      <label>Hotword</label>
+      <input id="hotwordInput" placeholder="e.g., hello"/>
+      <label>Reply message</label>
+      <textarea id="replyInput" rows="3" placeholder="Reply text that will be sent as DM"></textarea>
+      <button id="saveConfigBtn">Save Hotword</button>
     </div>
+  </div>
 
-    <!-- Hotword Modal -->
-    <div id="hotwordModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; backdrop-filter: blur(5px);">
-        <div style="background: white; margin: 50px auto; padding: 30px; border-radius: 15px; max-width: 500px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
-            <h3 style="margin-bottom: 20px; color: #495057;">➕ Add Trigger Word</h3>
-            <div class="form-group">
-                <label>Trigger Word:</label>
-                <input type="text" id="hotwordInput" class="form-control" 
-                       placeholder="e.g., interested, buy, info, pricing">
-                <small style="color: #6c757d; display: block; margin-top: 5px;">
-                    When someone comments this word, we'll automatically send them a DM.
-                </small>
-            </div>
-            <div class="form-group">
-                <label>Automated DM Response:</label>
-                <textarea id="dmMessageInput" class="form-control" rows="4" 
-                          placeholder="Enter the automated DM message to send..."></textarea>
-                <small style="color: #6c757d; display: block; margin-top: 5px;">
-                    This message will be sent automatically when the trigger word is detected.
-                </small>
-            </div>
-            <div style="display: flex; gap: 10px; margin-top: 30px;">
-                <button class="btn" onclick="saveHotword()">💾 Save Trigger</button>
-                <button class="btn btn-secondary" onclick="closeModal()">❌ Cancel</button>
-            </div>
+  <div class="card" id="logsCard" style="display:none;">
+    <h3>Logs</h3>
+    <div id="logsList">No logs yet.</div>
+  </div>
+
+<script>
+document.getElementById('connectBtn').addEventListener('click', () => {
+  window.location.href = '/auth/instagram';
+});
+
+async function refreshPosts() {
+  try {
+    const r = await fetch('/api/posts');
+    if (r.status === 401) {
+      // not connected
+      document.getElementById('postsCard').style.display = 'none';
+      document.getElementById('configCard').style.display = 'none';
+      document.getElementById('logsCard').style.display = 'none';
+      return;
+    }
+    const data = await r.json();
+    const posts = data.data || [];
+    const postsList = document.getElementById('postsList');
+    postsList.innerHTML = '';
+    posts.forEach(p => {
+      const el = document.createElement('div');
+      el.className = 'post';
+      const thumb = p.thumbnail_url || p.media_url || '';
+      el.innerHTML = `
+        <div style="flex:0 0 90px"><img src="${thumb}" alt="thumb" /></div>
+        <div style="flex:1">
+          <div><strong>${p.caption ? p.caption.slice(0,80) : '(no caption)'}</strong></div>
+          <div class="small">Post id: <code>${p.id}</code> • ${p.media_type} • ${new Date(p.timestamp).toLocaleString()}</div>
         </div>
+      `;
+      postsList.appendChild(el);
+    });
+    document.getElementById('postsCard').style.display = posts.length ? 'block' : 'none';
+    document.getElementById('configCard').style.display = 'block';
+    document.getElementById('logsCard').style.display = 'block';
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+document.getElementById('saveConfigBtn').addEventListener('click', async () => {
+  const postId = document.getElementById('postIdInput').value.trim();
+  const hotword = document.getElementById('hotwordInput').value.trim();
+  const reply = document.getElementById('replyInput').value.trim();
+  if (!postId || !hotword || !reply) return alert('postId, hotword and reply required');
+  const r = await fetch('/api/config', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ postId, hotword, reply })
+  });
+  const j = await r.json();
+  if (j.ok) {
+    alert('Saved');
+    document.getElementById('hotwordInput').value = '';
+    document.getElementById('replyInput').value = '';
+    loadLogs();
+  } else {
+    alert('Error saving config: ' + (j.error || 'unknown'));
+  }
+});
+
+async function loadLogs() {
+  const r = await fetch('/api/logs');
+  if (r.status === 401) return;
+  const j = await r.json();
+  const logs = j.logs || [];
+  const out = document.getElementById('logsList');
+  if (!logs.length) { out.innerHTML = 'No logs yet.'; return; }
+  out.innerHTML = logs.slice().reverse().map(l => `
+    <div class="log">
+      <div><strong>${l.commenter_username || l.commenter_id}</strong> commented "${l.comment_text}" on post ${l.postId}</div>
+      <div class="small">Replied: ${l.reply_sent} — ${new Date(l.when).toLocaleString()}</div>
     </div>
+  `).join('');
+}
 
-    <script>
-        let currentPostId = null;
-        let userPosts = [];
-        let currentUser = null;
+setInterval(() => {
+  refreshPosts();
+  loadLogs();
+}, 3000);
 
-        // Check authentication on page load
-        document.addEventListener('DOMContentLoaded', checkAuth);
-
-        async function checkAuth() {
-            try {
-                const response = await fetch('/api/user');
-                if (response.ok) {
-                    const user = await response.json();
-                    currentUser = user;
-                    showDashboard(user);
-                    loadPosts();
-                    loadLogs();
-                    updateStats();
-                    updateApiStatus();
-                } else {
-                    showAuthSection();
-                }
-            } catch (error) {
-                showAuthSection();
-            }
-        }
-
-        function connectInstagram() {
-            // Using Facebook OAuth for Instagram Business API
-            window.location.href = '/auth/facebook';
-        }
-
-        function showAuthSection() {
-            document.getElementById('authSection').style.display = 'block';
-            document.getElementById('dashboard').style.display = 'none';
-        }
-
-        function showDashboard(user) {
-            document.getElementById('authSection').style.display = 'none';
-            document.getElementById('dashboard').style.display = 'block';
-            document.getElementById('username').textContent = user.username;
-            
-            // Update user details
-            const userDetails = document.getElementById('userDetails');
-            let detailsHtml = `Business Account ID: ${user.igBusinessAccountId || 'Loading...'}`;
-            if (user.followersCount) {
-                detailsHtml += ` • Followers: ${user.followersCount.toLocaleString()}`;
-            }
-            if (user.pageName) {
-                detailsHtml += ` • Page: ${user.pageName}`;
-            }
-            userDetails.innerHTML = detailsHtml;
-        }
-
-        async function logout() {
-            try {
-                await fetch('/auth/logout', { method: 'POST' });
-                showAuthSection();
-            } catch (error) {
-                console.error('Logout error:', error);
-                showAuthSection();
-            }
-        }
-
-        function switchTab(tabName) {
-            // Hide all tabs
-            document.querySelectorAll('.tab-content').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-
-            // Show selected tab
-            document.getElementById(tabName + 'Tab').classList.add('active');
-            event.target.classList.add('active');
-
-            // Load data if needed
-            if (tabName === 'logs') {
-                loadLogs();
-            } else if (tabName === 'simulate') {
-                loadPostsForTest();
-            } else if (tabName === 'posts') {
-                loadPosts();
-            } else if (tabName === 'api') {
-                updateApiStatus();
-            }
-        }
-
-        async function loadPosts() {
-            try {
-                const response = await fetch('/api/posts');
-                const data = await response.json();
-                
-                if (data.success) {
-                    userPosts = data.posts;
-                    displayPosts(userPosts);
-                    updateStats();
-                } else {
-                    throw new Error(data.error || 'Failed to load posts');
-                }
-            } catch (error) {
-                document.getElementById('postsList').innerHTML = `
-                    <div class="alert alert-error">
-                        <strong>Error loading posts:</strong> ${error.message}
-                        ${error.message.includes('permissions') ? '<br><small>Please check your Instagram Business account permissions.</small>' : ''}
-                    </div>
-                `;
-            }
-        }
-
-        function displayPosts(posts) {
-            const container = document.getElementById('postsList');
-            
-            if (!posts || posts.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div style="font-size: 4rem; margin-bottom: 20px;">📱</div>
-                        <h3 style="color: #6c757d; margin-bottom: 10px;">No Posts Found</h3>
-                        <p>Make sure your Instagram Business account has posts and you have the necessary permissions.</p>
-                        <button class="btn" onclick="loadPosts()" style="margin-top: 15px;">
-                            🔄 Retry
-                        </button>
-                    </div>
-                `;
-                return;
-            }
-
-            container.innerHTML = posts.map(post => `
-                <div class="post-card">
-                    <div class="post-media">
-                        <img src="${post.media_display_url || 'https://via.placeholder.com/500x500/667eea/white?text=Instagram+Business+Post'}" 
-                             alt="Post" onerror="this.src='https://via.placeholder.com/500x500/667eea/white?text=Image+Not+Available'">
-                    </div>
-                    <div style="margin-bottom: 15px;">
-                        <p style="font-weight: 500; margin-bottom: 5px;">${post.caption ? post.caption.substring(0, 120) + (post.caption.length > 120 ? '...' : '') : 'No caption'}</p>
-                        <small style="color: #6c757d;">
-                            📅 ${new Date(post.timestamp).toLocaleDateString()} • 
-                            💬 ${post.comments_count || 0} comments •
-                            ❤️ ${post.like_count || 0} likes
-                        </small>
-                    </div>
-                    
-                    <div>
-                        <h4 style="margin-bottom: 15px; color: #495057;">🎯 Trigger Words:</h4>
-                        <div id="hotwords-${post.id}">
-                            ${post.hotwords && post.hotwords.length > 0 ? 
-                                post.hotwords.map(hw => `
-                                    <div class="hotword-item">
-                                        <div>
-                                            <strong style="color: #667eea;">"${hw.word}"</strong><br>
-                                            <small style="color: #666;">${hw.dmMessage.substring(0, 80)}${hw.dmMessage.length > 80 ? '...' : ''}</small>
-                                        </div>
-                                        <button class="btn btn-danger" onclick="removeHotword('${post.id}', '${hw.id}')" style="padding: 8px 12px; font-size: 14px;">
-                                            🗑️ Remove
-                                        </button>
-                                    </div>
-                                `).join('') : 
-                                '<p style="color: #6c757d; font-style: italic;">No trigger words configured yet.</p>'
-                            }
-                        </div>
-                        <button class="btn" onclick="openHotwordModal('${post.id}')" style="margin-top: 15px;">
-                            ➕ Add Trigger Word
-                        </button>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        function openHotwordModal(postId) {
-            currentPostId = postId;
-            document.getElementById('hotwordModal').style.display = 'block';
-        }
-
-        function closeModal() {
-            document.getElementById('hotwordModal').style.display = 'none';
-            currentPostId = null;
-            document.getElementById('hotwordInput').value = '';
-            document.getElementById('dmMessageInput').value = '';
-        }
-
-        async function saveHotword() {
-            const word = document.getElementById('hotwordInput').value.trim();
-            const dmMessage = document.getElementById('dmMessageInput').value.trim();
-
-            if (!word) {
-                alert('Please enter a trigger word');
-                return;
-            }
-
-            if (!dmMessage) {
-                alert('Please enter a DM message');
-                return;
-            }
-
-            try {
-                const response = await fetch(`/api/posts/${currentPostId}/hotwords`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ word, dmMessage })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    closeModal();
-                    loadPosts(); // Reload posts to show new hotword
-                    showAlert('Trigger word added successfully!', 'success');
-                } else {
-                    throw new Error(data.error || 'Failed to save trigger word');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                showAlert('Error saving trigger word: ' + error.message, 'error');
-            }
-        }
-
-        async function removeHotword(postId, hotwordId) {
-            if (!confirm('Are you sure you want to remove this trigger word?')) {
-                return;
-            }
-
-            try {
-                const response = await fetch(`/api/posts/${postId}/hotwords/${hotwordId}`, {
-                    method: 'DELETE'
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    loadPosts(); // Reload posts
-                    showAlert('Trigger word removed successfully!', 'success');
-                } else {
-                    throw new Error('Failed to remove trigger word');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                showAlert('Error removing trigger word', 'error');
-            }
-        }
-
-        async function loadLogs() {
-            try {
-                const response = await fetch('/api/logs');
-                const data = await response.json();
-                
-                if (data.success) {
-                    displayLogs(data.logs);
-                    updateStats();
-                } else {
-                    throw new Error(data.error);
-                }
-            } catch (error) {
-                document.getElementById('logsList').innerHTML = `
-                    <div class="alert alert-error">
-                        <strong>Error loading logs:</strong> ${error.message}
-                    </div>
-                `;
-            }
-        }
-
-        function displayLogs(logs) {
-            const container = document.getElementById('logsList');
-            
-            if (!logs || logs.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div style="font-size: 4rem; margin-bottom: 20px;">📨</div>
-                        <h3 style="color: #6c757d; margin-bottom: 10px;">No DM Logs Yet</h3>
-                        <p>DMs will appear here when comments trigger your automation rules.</p>
-                        <button class="btn" onclick="switchTab('simulate')" style="margin-top: 15px;">
-                            🧪 Test Your Setup
-                        </button>
-                    </div>
-                `;
-                return;
-            }
-
-            container.innerHTML = logs.map(log => `
-                <div class="log-item ${log.status === 'failed' ? 'failed' : ''} ${log.status.includes('simulated') ? 'simulated' : ''}">
-                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
-                        <strong style="color: #495057; flex: 1;">${new Date(log.timestamp).toLocaleString()}</strong>
-                        <span style="background: ${getStatusColor(log.status)}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">
-                            ${log.status.toUpperCase()}
-                        </span>
-                    </div>
-                    <p style="margin-bottom: 8px;"><strong>Comment:</strong> "${log.commentText}"</p>
-                    <p style="margin-bottom: 8px;"><strong>Trigger:</strong> "${log.hotword}" → <strong>DM:</strong> "${log.dmMessage}"</p>
-                    <small style="color: #6c757d;">
-                        📱 Post: ${log.postCaption || log.postId} • 
-                        👤 User: ${log.commenter || 'Unknown'}
-                        ${log.error ? ` • ❌ Error: ${log.error}` : ''}
-                        ${log.messageId ? ` • 📧 Message ID: ${log.messageId}` : ''}
-                    </small>
-                </div>
-            `).join('');
-        }
-
-        function getStatusColor(status) {
-            switch (status) {
-                case 'sent': return '#28a745';
-                case 'failed': return '#dc3545';
-                case 'sent (simulated)': return '#ffc107';
-                default: return '#6c757d';
-            }
-        }
-
-        async function loadPostsForTest() {
-            try {
-                const response = await fetch('/api/posts');
-                const data = await response.json();
-                
-                if (data.success) {
-                    const select = document.getElementById('testPostSelect');
-                    select.innerHTML = data.posts.map(post => 
-                        `<option value="${post.id}">${post.caption ? post.caption.substring(0, 80) + (post.caption.length > 80 ? '...' : '') : post.id}</option>`
-                    ).join('');
-                }
-            } catch (error) {
-                console.error('Error loading posts for test:', error);
-            }
-        }
-
-        async function simulateComment() {
-            const postId = document.getElementById('testPostSelect').value;
-            const commentText = document.getElementById('testComment').value.trim();
-
-            if (!postId) {
-                alert('Please select a post first');
-                return;
-            }
-
-            if (!commentText) {
-                alert('Please enter comment text');
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/simulate-comment', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ postId, commentText })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    showAlert('Comment simulated! Check the DM Logs tab to see the result.', 'success');
-                    document.getElementById('testComment').value = '';
-                    loadLogs();
-                    switchTab('logs');
-                } else {
-                    throw new Error(data.error || 'Failed to simulate comment');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                showAlert('Error simulating comment: ' + error.message, 'error');
-            }
-        }
-
-        async function testDM() {
-            try {
-                const response = await fetch('/api/test-dm', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({})
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    showAlert('DM system test successful! The API is working correctly.', 'success');
-                } else {
-                    throw new Error(data.error || 'DM test failed');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                showAlert('DM system test failed: ' + error.message, 'error');
-            }
-        }
-
-        function updateStats() {
-            // Update posts count
-            const postsCount = userPosts.length;
-            document.getElementById('statPosts').textContent = postsCount;
-
-            // Update hotwords count
-            const hotwordsCount = userPosts.reduce((total, post) => total + (post.hotwords ? post.hotwords.length : 0), 0);
-            document.getElementById('statHotwords').textContent = hotwordsCount;
-
-            // Update DMs count (from logs)
-            const dmLogsElement = document.getElementById('logsList');
-            if (dmLogsElement && !dmLogsElement.classList.contains('loading')) {
-                const dmItems = dmLogsElement.querySelectorAll('.log-item');
-                document.getElementById('statDms').textContent = dmItems.length;
-            }
-        }
-
-        async function updateApiStatus() {
-            if (!currentUser) return;
-
-            // Update API status fields
-            document.getElementById('igAccountId').value = currentUser.igBusinessAccountId || 'Not available';
-            document.getElementById('facebookPage').value = currentUser.pageName || 'Not available';
-            
-            try {
-                // Test API connectivity
-                const response = await fetch('/api/posts');
-                if (response.ok) {
-                    document.getElementById('connectionStatus').value = 'Connected ✓';
-                    document.getElementById('connectionStatus').style.color = '#28a745';
-                } else {
-                    throw new Error('API not responding properly');
-                }
-            } catch (error) {
-                document.getElementById('connectionStatus').value = 'Connection Issues ✗';
-                document.getElementById('connectionStatus').style.color = '#dc3545';
-            }
-        }
-
-        async function refreshConnection() {
-            showAlert('Refreshing connection status...', 'info');
-            await updateApiStatus();
-            showAlert('Connection status updated', 'success');
-        }
-
-        async function checkPermissions() {
-            showAlert('Checking permissions...', 'info');
-            // This would typically call an endpoint to verify permissions
-            setTimeout(() => {
-                showAlert('Basic permissions verified. Some features may require additional app review.', 'warning');
-            }, 1000);
-        }
-
-        function showAlert(message, type) {
-            // Remove existing alerts
-            const existingAlerts = document.querySelectorAll('.alert');
-            existingAlerts.forEach(alert => alert.remove());
-
-            // Create new alert
-            const alert = document.createElement('div');
-            alert.className = `alert alert-${type}`;
-            alert.textContent = message;
-            alert.style.position = 'fixed';
-            alert.style.top = '20px';
-            alert.style.right = '20px';
-            alert.style.zIndex = '1001';
-            alert.style.maxWidth = '400px';
-            alert.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-
-            document.body.appendChild(alert);
-
-            // Auto remove after 5 seconds
-            setTimeout(() => {
-                if (alert.parentNode) {
-                    alert.parentNode.removeChild(alert);
-                }
-            }, 5000);
-        }
-
-        // Close modal when clicking outside
-        document.getElementById('hotwordModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal();
-            }
-        });
-
-        // Handle Enter key in modal
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && document.getElementById('hotwordModal').style.display === 'block') {
-                saveHotword();
-            }
-            if (e.key === 'Escape' && document.getElementById('hotwordModal').style.display === 'block') {
-                closeModal();
-            }
-        });
-    </script>
+refreshPosts();
+loadLogs();
+</script>
 </body>
 </html>

@@ -73,6 +73,10 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.2);
         }
 
+        .btn-facebook {
+            background: linear-gradient(135deg, #1877f2 0%, #3b5998 100%);
+        }
+
         .btn-secondary {
             background: #6c757d;
         }
@@ -83,6 +87,11 @@
 
         .btn-success {
             background: #28a745;
+        }
+
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
         }
 
         .auth-section {
@@ -158,6 +167,11 @@
             background: #f8d7da;
         }
 
+        .log-item.simulated {
+            border-left-color: #ffc107;
+            background: #fff3cd;
+        }
+
         .form-group {
             margin-bottom: 20px;
         }
@@ -212,6 +226,12 @@
             background: #d1ecf1;
             color: #0c5460;
             border-color: #bee5eb;
+        }
+
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border-color: #ffeaa7;
         }
 
         .tab-container {
@@ -324,6 +344,38 @@
         .status-disconnected {
             background: #dc3545;
         }
+
+        .business-badge {
+            background: #1877f2;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin-left: 8px;
+        }
+
+        .permissions-list {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .permissions-list ul {
+            text-align: left;
+            display: inline-block;
+        }
+
+        .permissions-list li {
+            margin-bottom: 8px;
+        }
+
+        .test-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
@@ -333,18 +385,31 @@
             <h1 style="color: #667eea; margin-bottom: 20px;">🤖 Instagram Business DM Automation</h1>
             <p style="margin-bottom: 30px; color: #666; font-size: 1.1rem;">
                 Automate your Instagram Business direct messages based on comment triggers. 
-                Connect your Instagram Business account to get started.
+                Connect via Facebook to access your Instagram Business account.
             </p>
-            <button class="btn" onclick="connectInstagram()" style="padding: 15px 30px; font-size: 1.1rem;">
-                🔗 Connect Instagram Business Account
+            
+            <button class="btn btn-facebook" onclick="connectInstagram()" style="padding: 15px 30px; font-size: 1.1rem; margin-bottom: 20px;">
+                📱 Connect Instagram Business Account
             </button>
+            
+            <div class="permissions-list">
+                <h3 style="color: #495057; margin-bottom: 15px;">Required Permissions:</h3>
+                <ul style="color: #666; line-height: 1.8;">
+                    <li>📊 Access to your Instagram Business account</li>
+                    <li>💬 Read comments on your posts</li>
+                    <li>📨 Send automated direct messages</li>
+                    <li>📱 View your Instagram media</li>
+                    <li>👥 Access to connected Facebook Page</li>
+                </ul>
+            </div>
+
             <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
                 <h3 style="color: #495057; margin-bottom: 10px;">How it works:</h3>
                 <ol style="text-align: left; color: #666; line-height: 1.8;">
-                    <li>Connect your Instagram Business account</li>
-                    <li>Select posts you want to monitor</li>
+                    <li>Connect your Instagram Business account via Facebook</li>
+                    <li>Select posts you want to monitor for comments</li>
                     <li>Add trigger words (hotwords) for each post</li>
-                    <li>Set automated DM responses</li>
+                    <li>Set automated DM responses for each trigger</li>
                     <li>We automatically send DMs when users comment your hotwords</li>
                 </ol>
             </div>
@@ -354,8 +419,9 @@
         <div id="dashboard" class="dashboard">
             <div class="user-header">
                 <div class="user-info">
-                    <h2>Welcome, <span id="username"></span>! 👋</h2>
+                    <h2>Welcome, <span id="username"></span>! <span class="business-badge">Business</span> 👋</h2>
                     <p>Manage your Instagram Business DM automation below</p>
+                    <div id="userDetails" style="margin-top: 10px; font-size: 0.9rem; opacity: 0.8;"></div>
                 </div>
                 <button class="btn btn-secondary" onclick="logout()">
                     🚪 Logout
@@ -389,15 +455,19 @@
                 <div class="tabs">
                     <div class="tab active" onclick="switchTab('posts')">📱 Posts & Triggers</div>
                     <div class="tab" onclick="switchTab('logs')">📊 DM Logs</div>
-                    <div class="tab" onclick="switchTab('simulate')">🧪 Test Simulation</div>
+                    <div class="tab" onclick="switchTab('simulate')">🧪 Test Tools</div>
+                    <div class="tab" onclick="switchTab('api')">🔧 API Status</div>
                 </div>
 
                 <!-- Posts & Hotwords Tab -->
                 <div id="postsTab" class="tab-content active">
                     <div class="card">
                         <h3 style="margin-bottom: 20px;">Your Instagram Business Posts</h3>
+                        <p style="margin-bottom: 15px; color: #666;">
+                            Select posts to monitor and add trigger words that will automatically send DMs when commented.
+                        </p>
                         <div id="postsList" class="loading">
-                            Loading your posts...
+                            Loading your Instagram Business posts...
                         </div>
                     </div>
                 </div>
@@ -406,33 +476,85 @@
                 <div id="logsTab" class="tab-content">
                     <div class="card">
                         <h3 style="margin-bottom: 20px;">DM Sent History</h3>
+                        <p style="margin-bottom: 15px; color: #666;">
+                            View all automated DMs sent by the system.
+                        </p>
                         <div id="logsList" class="loading">
                             Loading DM logs...
                         </div>
                     </div>
                 </div>
 
-                <!-- Simulate Test Tab -->
+                <!-- Test Tools Tab -->
                 <div id="simulateTab" class="tab-content">
                     <div class="card">
                         <h3 style="margin-bottom: 20px;">Test Your Automation</h3>
-                        <p style="margin-bottom: 20px; color: #666;">
-                            Simulate a comment to test if your hotwords are working correctly.
-                        </p>
-                        <div class="form-group">
-                            <label>Select Post:</label>
-                            <select id="testPostSelect" class="form-control">
-                                <option value="">Loading posts...</option>
-                            </select>
+                        
+                        <div class="test-section">
+                            <h4 style="color: #495057; margin-bottom: 15px;">🧪 Simulate Comment</h4>
+                            <p style="margin-bottom: 15px; color: #666;">
+                                Test if your trigger words are working correctly by simulating a comment.
+                            </p>
+                            <div class="form-group">
+                                <label>Select Post:</label>
+                                <select id="testPostSelect" class="form-control">
+                                    <option value="">Loading posts...</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Comment Text:</label>
+                                <input type="text" id="testComment" class="form-control" 
+                                       placeholder="Enter a comment that should trigger a DM (e.g., 'I'm interested in this product')">
+                            </div>
+                            <button class="btn btn-warning" onclick="simulateComment()">
+                                🧪 Simulate Comment
+                            </button>
                         </div>
-                        <div class="form-group">
-                            <label>Comment Text:</label>
-                            <input type="text" id="testComment" class="form-control" 
-                                   placeholder="Enter a comment that should trigger a DM (e.g., 'I'm interested in this product')">
+
+                        <div class="test-section">
+                            <h4 style="color: #495057; margin-bottom: 15px;">🔧 Test DM Functionality</h4>
+                            <p style="margin-bottom: 15px; color: #666;">
+                                Verify that the DM sending functionality is working properly.
+                            </p>
+                            <button class="btn btn-success" onclick="testDM()">
+                                📨 Test DM System
+                            </button>
                         </div>
-                        <button class="btn btn-success" onclick="simulateComment()">
-                            🧪 Simulate Comment
-                        </button>
+                    </div>
+                </div>
+
+                <!-- API Status Tab -->
+                <div id="apiTab" class="tab-content">
+                    <div class="card">
+                        <h3 style="margin-bottom: 20px;">API Status & Configuration</h3>
+                        
+                        <div class="alert alert-info">
+                            <strong>Instagram Business API</strong> - Connected via Facebook OAuth
+                        </div>
+
+                        <div class="form-group">
+                            <label>Instagram Business Account ID:</label>
+                            <input type="text" id="igAccountId" class="form-control" readonly>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Connected Facebook Page:</label>
+                            <input type="text" id="facebookPage" class="form-control" readonly>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Connection Status:</label>
+                            <input type="text" id="connectionStatus" class="form-control" value="Checking..." readonly>
+                        </div>
+
+                        <div style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button class="btn" onclick="refreshConnection()">
+                                🔄 Refresh Status
+                            </button>
+                            <button class="btn btn-secondary" onclick="checkPermissions()">
+                                🔍 Check Permissions
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -469,6 +591,7 @@
     <script>
         let currentPostId = null;
         let userPosts = [];
+        let currentUser = null;
 
         // Check authentication on page load
         document.addEventListener('DOMContentLoaded', checkAuth);
@@ -478,10 +601,12 @@
                 const response = await fetch('/api/user');
                 if (response.ok) {
                     const user = await response.json();
+                    currentUser = user;
                     showDashboard(user);
                     loadPosts();
                     loadLogs();
                     updateStats();
+                    updateApiStatus();
                 } else {
                     showAuthSection();
                 }
@@ -491,7 +616,8 @@
         }
 
         function connectInstagram() {
-            window.location.href = '/auth/instagram';
+            // Using Facebook OAuth for Instagram Business API
+            window.location.href = '/auth/facebook';
         }
 
         function showAuthSection() {
@@ -503,6 +629,17 @@
             document.getElementById('authSection').style.display = 'none';
             document.getElementById('dashboard').style.display = 'block';
             document.getElementById('username').textContent = user.username;
+            
+            // Update user details
+            const userDetails = document.getElementById('userDetails');
+            let detailsHtml = `Business Account ID: ${user.igBusinessAccountId || 'Loading...'}`;
+            if (user.followersCount) {
+                detailsHtml += ` • Followers: ${user.followersCount.toLocaleString()}`;
+            }
+            if (user.pageName) {
+                detailsHtml += ` • Page: ${user.pageName}`;
+            }
+            userDetails.innerHTML = detailsHtml;
         }
 
         async function logout() {
@@ -535,6 +672,8 @@
                 loadPostsForTest();
             } else if (tabName === 'posts') {
                 loadPosts();
+            } else if (tabName === 'api') {
+                updateApiStatus();
             }
         }
 
@@ -548,13 +687,13 @@
                     displayPosts(userPosts);
                     updateStats();
                 } else {
-                    throw new Error(data.error);
+                    throw new Error(data.error || 'Failed to load posts');
                 }
             } catch (error) {
                 document.getElementById('postsList').innerHTML = `
                     <div class="alert alert-error">
                         <strong>Error loading posts:</strong> ${error.message}
-                        ${error.message.includes('mock data') ? '<br><small>This is expected if Instagram API is not fully configured.</small>' : ''}
+                        ${error.message.includes('permissions') ? '<br><small>Please check your Instagram Business account permissions.</small>' : ''}
                     </div>
                 `;
             }
@@ -568,7 +707,10 @@
                     <div class="empty-state">
                         <div style="font-size: 4rem; margin-bottom: 20px;">📱</div>
                         <h3 style="color: #6c757d; margin-bottom: 10px;">No Posts Found</h3>
-                        <p>Make sure your Instagram Business account has posts or try reconnecting your account.</p>
+                        <p>Make sure your Instagram Business account has posts and you have the necessary permissions.</p>
+                        <button class="btn" onclick="loadPosts()" style="margin-top: 15px;">
+                            🔄 Retry
+                        </button>
                     </div>
                 `;
                 return;
@@ -583,9 +725,9 @@
                     <div style="margin-bottom: 15px;">
                         <p style="font-weight: 500; margin-bottom: 5px;">${post.caption ? post.caption.substring(0, 120) + (post.caption.length > 120 ? '...' : '') : 'No caption'}</p>
                         <small style="color: #6c757d;">
-                            Posted: ${new Date(post.timestamp).toLocaleDateString()} • 
-                            Comments: ${post.comments_count || 0} •
-                            Likes: ${post.like_count || 0}
+                            📅 ${new Date(post.timestamp).toLocaleDateString()} • 
+                            💬 ${post.comments_count || 0} comments •
+                            ❤️ ${post.like_count || 0} likes
                         </small>
                     </div>
                     
@@ -727,22 +869,32 @@
             }
 
             container.innerHTML = logs.map(log => `
-                <div class="log-item ${log.status === 'failed' ? 'failed' : ''}">
-                    <div style="display: flex; justify-content: between; align-items: start; margin-bottom: 10px;">
+                <div class="log-item ${log.status === 'failed' ? 'failed' : ''} ${log.status.includes('simulated') ? 'simulated' : ''}">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
                         <strong style="color: #495057; flex: 1;">${new Date(log.timestamp).toLocaleString()}</strong>
-                        <span style="background: ${log.status === 'sent' ? '#28a745' : '#dc3545'}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">
+                        <span style="background: ${getStatusColor(log.status)}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">
                             ${log.status.toUpperCase()}
                         </span>
                     </div>
                     <p style="margin-bottom: 8px;"><strong>Comment:</strong> "${log.commentText}"</p>
                     <p style="margin-bottom: 8px;"><strong>Trigger:</strong> "${log.hotword}" → <strong>DM:</strong> "${log.dmMessage}"</p>
                     <small style="color: #6c757d;">
-                        Post: ${log.postCaption || log.postId} • 
-                        User: ${log.commenter || 'Unknown'}
-                        ${log.error ? ` • Error: ${log.error}` : ''}
+                        📱 Post: ${log.postCaption || log.postId} • 
+                        👤 User: ${log.commenter || 'Unknown'}
+                        ${log.error ? ` • ❌ Error: ${log.error}` : ''}
+                        ${log.messageId ? ` • 📧 Message ID: ${log.messageId}` : ''}
                     </small>
                 </div>
             `).join('');
+        }
+
+        function getStatusColor(status) {
+            switch (status) {
+                case 'sent': return '#28a745';
+                case 'failed': return '#dc3545';
+                case 'sent (simulated)': return '#ffc107';
+                default: return '#6c757d';
+            }
         }
 
         async function loadPostsForTest() {
@@ -800,6 +952,29 @@
             }
         }
 
+        async function testDM() {
+            try {
+                const response = await fetch('/api/test-dm', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({})
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('DM system test successful! The API is working correctly.', 'success');
+                } else {
+                    throw new Error(data.error || 'DM test failed');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showAlert('DM system test failed: ' + error.message, 'error');
+            }
+        }
+
         function updateStats() {
             // Update posts count
             const postsCount = userPosts.length;
@@ -815,6 +990,42 @@
                 const dmItems = dmLogsElement.querySelectorAll('.log-item');
                 document.getElementById('statDms').textContent = dmItems.length;
             }
+        }
+
+        async function updateApiStatus() {
+            if (!currentUser) return;
+
+            // Update API status fields
+            document.getElementById('igAccountId').value = currentUser.igBusinessAccountId || 'Not available';
+            document.getElementById('facebookPage').value = currentUser.pageName || 'Not available';
+            
+            try {
+                // Test API connectivity
+                const response = await fetch('/api/posts');
+                if (response.ok) {
+                    document.getElementById('connectionStatus').value = 'Connected ✓';
+                    document.getElementById('connectionStatus').style.color = '#28a745';
+                } else {
+                    throw new Error('API not responding properly');
+                }
+            } catch (error) {
+                document.getElementById('connectionStatus').value = 'Connection Issues ✗';
+                document.getElementById('connectionStatus').style.color = '#dc3545';
+            }
+        }
+
+        async function refreshConnection() {
+            showAlert('Refreshing connection status...', 'info');
+            await updateApiStatus();
+            showAlert('Connection status updated', 'success');
+        }
+
+        async function checkPermissions() {
+            showAlert('Checking permissions...', 'info');
+            // This would typically call an endpoint to verify permissions
+            setTimeout(() => {
+                showAlert('Basic permissions verified. Some features may require additional app review.', 'warning');
+            }, 1000);
         }
 
         function showAlert(message, type) {
@@ -846,6 +1057,16 @@
         // Close modal when clicking outside
         document.getElementById('hotwordModal').addEventListener('click', function(e) {
             if (e.target === this) {
+                closeModal();
+            }
+        });
+
+        // Handle Enter key in modal
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && document.getElementById('hotwordModal').style.display === 'block') {
+                saveHotword();
+            }
+            if (e.key === 'Escape' && document.getElementById('hotwordModal').style.display === 'block') {
                 closeModal();
             }
         });

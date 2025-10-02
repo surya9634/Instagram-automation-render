@@ -1,7 +1,7 @@
 {
   "name": "instagram-dm-automation",
   "version": "1.0.0",
-  "description": "Instagram DM Automation Platform with Basic Display API",
+  "description": "Instagram Business DM Automation Platform",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -17,9 +17,10 @@
   },
   "keywords": [
     "instagram",
+    "business",
     "automation",
     "dm",
-    "basic-display-api"
+    "api"
   ],
   "author": "Your Name",
   "license": "MIT"

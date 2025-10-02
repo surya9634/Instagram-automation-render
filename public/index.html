@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Instagram DM Automation</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; background: #f7f7f7; color: #333; }
+    body { font-family: Arial; margin: 20px; background: #f7f7f7; color: #333; }
     button { padding: 8px 16px; margin: 5px; cursor: pointer; }
     input, select { padding: 6px; margin: 5px; width: 200px; }
     .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
@@ -17,134 +17,111 @@
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Instagram DM Automation</h1>
+<div class="container">
+  <h1>Instagram DM Automation</h1>
 
-    <!-- Connect Instagram -->
-    <div>
-      <a href="/auth/instagram"><button>Connect Instagram</button></a>
-    </div>
-
-    <hr>
-
-    <!-- Select Post + Add Hotword -->
-    <div>
-      <h2>Add Hotword Reply</h2>
-      <select id="postsSelect">
-        <option value="">-- Select Post --</option>
-      </select><br>
-      <input type="text" id="hotwordInput" placeholder="Hotword (trigger)">
-      <input type="text" id="replyInput" placeholder="Reply message">
-      <button onclick="addHotword()">Add Hotword</button>
-    </div>
-
-    <hr>
-
-    <!-- Current Configs -->
-    <div>
-      <h2>Current Hotword Configs</h2>
-      <div id="configsDiv"></div>
-    </div>
-
-    <hr>
-
-    <!-- DM Logs -->
-    <div>
-      <h2>DM Logs</h2>
-      <div id="logsDiv"></div>
-    </div>
+  <div>
+    <a href="/auth/instagram"><button>Connect Instagram</button></a>
   </div>
 
-  <script>
-    // --- Fetch posts for dropdown ---
-    async function fetchPosts() {
-      try {
-        const res = await fetch('/api/posts');
-        const data = await res.json();
-        const select = document.getElementById('postsSelect');
-        if(data.data) {
-          data.data.forEach(post => {
-            const opt = document.createElement('option');
-            opt.value = post.id;
-            opt.textContent = post.caption ? post.caption.slice(0,50) + '...' : post.id;
-            select.appendChild(opt);
-          });
-        }
-      } catch(err) {
-        console.error('Failed to fetch posts', err);
+  <hr>
+
+  <div>
+    <h2>Add Hotword Reply</h2>
+    <select id="postsSelect">
+      <option value="">-- Select Post --</option>
+    </select><br>
+    <input type="text" id="hotwordInput" placeholder="Hotword (trigger)">
+    <input type="text" id="replyInput" placeholder="Reply message">
+    <button onclick="addHotword()">Add Hotword</button>
+  </div>
+
+  <hr>
+
+  <div>
+    <h2>Current Hotword Configs</h2>
+    <div id="configsDiv"></div>
+  </div>
+
+  <hr>
+
+  <div>
+    <h2>DM Logs</h2>
+    <div id="logsDiv"></div>
+  </div>
+</div>
+
+<script>
+async function fetchPosts() {
+  try {
+    const res = await fetch('/api/posts');
+    const data = await res.json();
+    const select = document.getElementById('postsSelect');
+    if(data.data) {
+      select.innerHTML = '<option value="">-- Select Post --</option>';
+      data.data.forEach(post => {
+        const opt = document.createElement('option');
+        opt.value = post.id;
+        opt.textContent = post.caption ? post.caption.slice(0,50)+'...' : post.id;
+        select.appendChild(opt);
+      });
+    }
+  } catch(err) { console.error(err); }
+}
+
+async function fetchConfigs() {
+  try {
+    const res = await fetch('/api/config');
+    const data = await res.json();
+    const configsDiv = document.getElementById('configsDiv');
+    configsDiv.innerHTML = '';
+    if(data.configs) {
+      for(const postId in data.configs) {
+        const list = data.configs[postId];
+        const el = document.createElement('div');
+        el.innerHTML = `<strong>Post ID: ${postId}</strong><ul>`+
+          list.map(c=>`<li>${c.hotword} → ${c.reply}</li>`).join('')+`</ul>`;
+        configsDiv.appendChild(el);
       }
     }
 
-    // --- Fetch configs and logs ---
-    async function fetchConfigs() {
-      try {
-        const res = await fetch('/api/config');
-        const data = await res.json();
-        const configsDiv = document.getElementById('configsDiv');
-        configsDiv.innerHTML = '';
-        if(data.configs) {
-          for(const postId in data.configs) {
-            const list = data.configs[postId];
-            const el = document.createElement('div');
-            el.innerHTML = `<strong>Post ID: ${postId}</strong><ul>` +
-              list.map(c => `<li>${c.hotword} → ${c.reply}</li>`).join('') +
-              `</ul>`;
-            configsDiv.appendChild(el);
-          }
-        }
-
-        // Logs
-        const logsDiv = document.getElementById('logsDiv');
-        logsDiv.innerHTML = '';
-        if(data.logs && data.logs.length) {
-          const table = document.createElement('table');
-          table.innerHTML = `<tr><th>Time</th><th>Post ID</th><th>Commenter</th><th>Comment</th><th>Reply Sent</th></tr>`;
-          data.logs.forEach(log => {
-            table.innerHTML += `<tr>
-              <td>${log.when}</td>
-              <td>${log.postId}</td>
-              <td>${log.commenter_username || log.commenter_id}</td>
-              <td>${log.comment_text}</td>
-              <td>${log.reply_sent}</td>
-            </tr>`;
-          });
-          logsDiv.appendChild(table);
-        }
-      } catch(err) {
-        console.error('Failed to fetch configs/logs', err);
-      }
+    const logsDiv = document.getElementById('logsDiv');
+    logsDiv.innerHTML = '';
+    if(data.logs) {
+      const table = document.createElement('table');
+      table.innerHTML = `<tr><th>Time</th><th>Post ID</th><th>Commenter</th><th>Comment</th><th>Reply</th></tr>` +
+        data.logs.map(l=>`<tr>
+          <td>${l.when}</td>
+          <td>${l.postId}</td>
+          <td>${l.commenter_username || l.commenter_id}</td>
+          <td>${l.comment_text}</td>
+          <td>${l.reply_sent}</td>
+        </tr>`).join('');
+      logsDiv.appendChild(table);
     }
+  } catch(err){ console.error(err); }
+}
 
-    // --- Add hotword ---
-    async function addHotword() {
-      const postId = document.getElementById('postsSelect').value;
-      const hotword = document.getElementById('hotwordInput').value.trim();
-      const reply = document.getElementById('replyInput').value.trim();
+async function addHotword() {
+  const postId = document.getElementById('postsSelect').value;
+  const hotword = document.getElementById('hotwordInput').value;
+  const reply = document.getElementById('replyInput').value;
+  if(!postId || !hotword || !reply) return alert('Fill all fields!');
+  await fetch('/api/config', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({postId, hotword, reply})
+  });
+  document.getElementById('hotwordInput').value='';
+  document.getElementById('replyInput').value='';
+  fetchConfigs();
+}
 
-      if(!postId || !hotword || !reply) { alert('All fields required'); return; }
-
-      try {
-        const res = await fetch('/api/config', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ postId, hotword, reply })
-        });
-        const data = await res.json();
-        if(data.ok) {
-          alert('Hotword added!');
-          document.getElementById('hotwordInput').value = '';
-          document.getElementById('replyInput').value = '';
-          fetchConfigs();
-        }
-      } catch(err) {
-        console.error('Failed to add hotword', err);
-      }
-    }
-
-    // --- Init ---
-    fetchPosts();
-    fetchConfigs();
-    setInterval(fetchConfigs, 5000); // refresh logs/configs every 5s
-  </script>
+window.onload = () => {
+  fetchPosts();
+  fetchConfigs();
+  setInterval(fetchConfigs, 10000); // auto-refresh logs
+}
+</script>
 </body>
 </html>
